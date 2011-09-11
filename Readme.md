@@ -1,6 +1,6 @@
 # require-jade
 
-A [Jade](http://jade-lang.org/) loader plugin for [RequireJS](http://requirejs.org).
+A [Jade](http://jade-lang.com/) loader plugin for [RequireJS](http://requirejs.org).
 
 It is known to work with RequireJS 0.26.0+.
 
@@ -11,17 +11,22 @@ serve your .jade files.
 
 ## Usage
 
-1) Download the latest release version of jade.js. It includes Jade (0.15.4).
-
-2) Reference Jade files via the jade! plugin name:
+Reference Jade files via the jade! plugin name:
 
     require(['jade!userview'], function (userView) {
-      $('.user').html(userView());
+      $('.user').html(userView(locals));
     });
+
+They will be returned as a Jade template function that accepts locals as the first arg.
 
 # Optimizing
 
-jade.js includes optimizer instructions.  To use the activate the instructions just include: 
+When you are ready to deploy your application and want to compile your JS into a single file 
+you can make used of the requireJS optimizer. Jade.js includes optimizer instructions that will 
+precompile the templates and remove the Jade compiler from the compiled source.  Only do this
+if you are not going to be dynamically including more Jade templates. 
+
+To use the activate the instructions just include: 
 
     pragmasOnSave: {
       excludeJade : true

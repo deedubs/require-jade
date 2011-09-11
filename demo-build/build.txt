@@ -1,0 +1,6 @@
+
+lib/main.js
+----------------
+jade!views/welcome
+lib/../../jade.js
+lib/main.js
