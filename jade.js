@@ -72,6 +72,7 @@ var nodes = require('./nodes')
   , filters = require('./filters')
   , doctypes = require('./doctypes')
   , selfClosing = require('./self-closing')
+  , runtime = require('./runtime')
   , utils = require('./utils');
 
 
@@ -145,10 +146,9 @@ Compiler.prototype = {
    */
 
   setDoctype: function(name){
-    var doctype = doctypes[(name || 'default').toLowerCase()];
-    doctype = doctype || '<!DOCTYPE ' + name + '>';
-    this.doctype = doctype;
-    this.terse = '5' == name || 'html' == name;
+    name = (name && name.toLowerCase()) || 'default';
+    this.doctype = doctypes[name] || '<!DOCTYPE ' + name + '>';
+    this.terse = this.doctype.toLowerCase() == '<!doctype html>';
     this.xml = 0 == this.doctype.indexOf('<?xml');
   },
 
@@ -181,7 +181,7 @@ Compiler.prototype = {
    * @param {Boolean} newline
    * @api public
    */
-  
+
   prettyIndent: function(offset, newline){
     offset = offset || 0;
     newline = newline ? '\\n' : '';
@@ -203,7 +203,7 @@ Compiler.prototype = {
     if (debug) {
       this.buf.push('__jade.unshift({ lineno: ' + node.line
         + ', filename: ' + (node.filename
-          ? '"' + node.filename + '"'
+          ? JSON.stringify(node.filename)
           : '__jade[0].filename')
         + ' });');
     }
@@ -289,16 +289,24 @@ Compiler.prototype = {
     var len = block.nodes.length
       , escape = this.escape
       , pp = this.pp
-    
+
+    // Block keyword has a special meaning in mixins
+    if (this.parentIndents && block.mode) {
+      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
+      this.buf.push('block && block();');
+      if (pp) this.buf.push("__indent.pop();")
+      return;
+    }
+
     // Pretty print multi-line text
     if (pp && len > 1 && !escape && block.nodes[0].isText && block.nodes[1].isText)
       this.prettyIndent(1, true);
-    
+
     for (var i = 0; i < len; ++i) {
       // Pretty print text
       if (pp && i > 0 && !escape && block.nodes[i].isText && block.nodes[i-1].isText)
         this.prettyIndent(1, false);
-      
+
       this.visit(block.nodes[i]);
       // Multiple text nodes are separated by newlines
       if (block.nodes[i+1] && block.nodes[i].isText && block.nodes[i+1].isText)
@@ -334,33 +342,62 @@ Compiler.prototype = {
 
   visitMixin: function(mixin){
     var name = mixin.name.replace(/-/g, '_') + '_mixin'
-      , args = mixin.args || '';
+      , args = mixin.args || ''
+      , block = mixin.block
+      , attrs = mixin.attrs
+      , pp = this.pp;
 
     if (mixin.call) {
-      if (this.pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
-      if (mixin.block) {
-        if (args) {
-          this.buf.push(name + '(' + args + ', function(){');
-        } else {
-          this.buf.push(name + '(function(){');
+      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
+      if (block || attrs.length) {
+
+        this.buf.push(name + '.call({');
+
+        if (block) {
+          this.buf.push('block: function(){');
+
+          // Render block with no indents, dynamically added when rendered
+          this.parentIndents++;
+          var _indents = this.indents;
+          this.indents = 0;
+          this.visit(mixin.block);
+          this.indents = _indents;
+          this.parentIndents--;
+
+          if (attrs.length) {
+            this.buf.push('},');
+          } else {
+            this.buf.push('}');
+          }
         }
-        this.buf.push('var buf = [];');
-        this.visit(mixin.block);
-        this.buf.push('return buf.join("");');
-        this.buf.push('}());\n');
+
+        if (attrs.length) {
+          var val = this.attrs(attrs);
+          if (val.inherits) {
+            this.buf.push('attributes: merge({' + val.buf
+                + '}, attributes), escaped: merge(' + val.escaped + ', escaped, true)');
+          } else {
+            this.buf.push('attributes: {' + val.buf + '}, escaped: ' + val.escaped);
+          }
+        }
+
+        if (args) {
+          this.buf.push('}, ' + args + ');');
+        } else {
+          this.buf.push('});');
+        }
+
       } else {
         this.buf.push(name + '(' + args + ');');
       }
-      if (this.pp) this.buf.push("__indent.pop();")
+      if (pp) this.buf.push("__indent.pop();")
     } else {
-      args = args
-        ? args.split(/ *, */).concat('content').join(', ')
-        : 'content';
       this.buf.push('var ' + name + ' = function(' + args + '){');
-      if (this.pp) this.parentIndents++;
-      this.visit(mixin.block);
-      if (this.pp) this.parentIndents--;
-      this.buf.push('}');
+      this.buf.push('var block = this.block, attributes = this.attributes || {}, escaped = this.escaped || {};');
+      this.parentIndents++;
+      this.visit(block);
+      this.parentIndents--;
+      this.buf.push('};');
     }
   },
 
@@ -374,7 +411,10 @@ Compiler.prototype = {
 
   visitTag: function(tag){
     this.indents++;
-    var name = tag.name;
+    var name = tag.name
+      , pp = this.pp;
+
+    if (tag.buffer) name = "' + (" + name + ") + '";
 
     if (!this.hasCompiledTag) {
       if (!this.hasCompiledDoctype && 'html' == name) {
@@ -384,11 +424,10 @@ Compiler.prototype = {
     }
 
     // pretty print
-    if (this.pp && !tag.isInline()) {
+    if (pp && !tag.isInline())
       this.prettyIndent(0, true);
-    }
 
-    if (~selfClosing.indexOf(name) && !this.xml) {
+    if ((~selfClosing.indexOf(name) || tag.selfClosing) && !this.xml) {
       this.buffer('<' + name);
       this.visitAttributes(tag.attrs);
       this.terse
@@ -408,9 +447,8 @@ Compiler.prototype = {
       this.visit(tag.block);
 
       // pretty print
-      if (this.pp && !tag.isInline() && 'pre' != tag.name && !tag.canInline()) {
+      if (pp && !tag.isInline() && 'pre' != tag.name && !tag.canInline())
         this.prettyIndent(0, true);
-      }
 
       this.buffer('</' + name + '>');
     }
@@ -435,6 +473,7 @@ Compiler.prototype = {
         throw new Error('unknown filter ":' + filter.name + '"');
       }
     }
+
     if (filter.isASTFilter) {
       this.buf.push(fn(filter.block, this, filter.attrs));
     } else {
@@ -453,7 +492,7 @@ Compiler.prototype = {
    */
 
   visitText: function(text){
-    text = utils.text(text.val);
+    text = utils.text(text.val.replace(/\\/g, '\\\\'));
     if (this.escape) text = escape(text);
     this.buffer(text);
   },
@@ -535,14 +574,27 @@ Compiler.prototype = {
     this.buf.push(''
       + '// iterate ' + each.obj + '\n'
       + ';(function(){\n'
-      + '  if (\'number\' == typeof ' + each.obj + '.length) {\n'
+      + '  if (\'number\' == typeof ' + each.obj + '.length) {\n');
+
+    if (each.alternative) {
+      this.buf.push('  if (' + each.obj + '.length) {');
+    }
+
+    this.buf.push(''
       + '    for (var ' + each.key + ' = 0, $$l = ' + each.obj + '.length; ' + each.key + ' < $$l; ' + each.key + '++) {\n'
       + '      var ' + each.val + ' = ' + each.obj + '[' + each.key + '];\n');
 
     this.visit(each.block);
 
+    this.buf.push('    }\n');
+
+    if (each.alternative) {
+      this.buf.push('  } else {');
+      this.visit(each.alternative);
+      this.buf.push('  }');
+    }
+
     this.buf.push(''
-      + '    }\n'
       + '  } else {\n'
       + '    for (var ' + each.key + ' in ' + each.obj + ') {\n'
        + '      if (' + each.obj + '.hasOwnProperty(' + each.key + ')){'
@@ -563,13 +615,33 @@ Compiler.prototype = {
    */
 
   visitAttributes: function(attrs){
+    var val = this.attrs(attrs);
+    if (val.inherits) {
+      this.buf.push("buf.push(attrs(merge({ " + val.buf +
+          " }, attributes), merge(" + val.escaped + ", escaped, true)));");
+    } else if (val.constant) {
+      eval('var buf={' + val.buf + '};');
+      this.buffer(runtime.attrs(buf, JSON.parse(val.escaped)), true);
+    } else {
+      this.buf.push("buf.push(attrs({ " + val.buf + " }, " + val.escaped + "));");
+    }
+  },
+
+  /**
+   * Compile attributes.
+   */
+
+  attrs: function(attrs){
     var buf = []
       , classes = []
-      , escaped = {};
+      , escaped = {}
+      , constant = attrs.every(function(attr){ return isConstant(attr.val) })
+      , inherits = false;
 
     if (this.terse) buf.push('terse: true');
 
     attrs.forEach(function(attr){
+      if (attr.name == 'attributes') return inherits = true;
       escaped[attr.name] = attr.escaped;
       if (attr.name == 'class') {
         classes.push('(' + attr.val + ')');
@@ -584,10 +656,39 @@ Compiler.prototype = {
       buf.push("class: " + classes);
     }
 
-    buf = buf.join(', ').replace('class:', '"class":');
-    this.buf.push("buf.push(attrs({ " + buf + " }, " + JSON.stringify(escaped) + "));");
+    return {
+      buf: buf.join(', ').replace('class:', '"class":'),
+      escaped: JSON.stringify(escaped),
+      inherits: inherits,
+      constant: constant
+    };
   }
 };
+
+/**
+ * Check if expression can be evaluated to a constant
+ *
+ * @param {String} expression
+ * @return {Boolean}
+ * @api private
+ */
+
+function isConstant(val){
+  // Check strings/literals
+  if (/^ *("([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)'|true|false|null|undefined) *$/i.test(val))
+    return true;
+
+  // Check numbers
+  if (!isNaN(Number(val)))
+    return true;
+
+  // Check arrays
+  var matches;
+  if (matches = /^ *\[(.*)\] *$/.exec(val))
+    return matches[1].split(',').every(isConstant);
+
+  return false;
+}
 
 /**
  * Escape the given string of `html`.
@@ -604,6 +705,7 @@ function escape(html){
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
 }); // module: compiler.js
 
 require.register("doctypes.js", function(module, exports, require){
@@ -616,8 +718,8 @@ require.register("doctypes.js", function(module, exports, require){
 
 module.exports = {
     '5': '<!DOCTYPE html>'
+  , 'default': '<!DOCTYPE html>'
   , 'xml': '<?xml version="1.0" encoding="utf-8" ?>'
-  , 'default': '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">'
   , 'transitional': '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">'
   , 'strict': '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">'
   , 'frameset': '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Frameset//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd">'
@@ -779,7 +881,7 @@ var Parser = require('./parser')
  * Library version.
  */
 
-exports.version = '0.25.0';
+exports.version = '0.27.2';
 
 /**
  * Expose self closing tags.
@@ -877,10 +979,24 @@ function parse(str, options){
 }
 
 /**
+ * Strip any UTF-8 BOM off of the start of `str`, if it exists.
+ *
+ * @param {String} str
+ * @return {String}
+ * @api private
+ */
+
+function stripBOM(str){
+  return 0xFEFF == str.charCodeAt(0)
+    ? str.substring(1)
+    : str;
+}
+
+/**
  * Compile a `Function` representation of the given jade `str`.
  *
  * Options:
- * 
+ *
  *   - `compileDebug` when `false` debugging code is stripped from the compiled template
  *   - `client` when `true` the helper functions `escape()` etc will reference `jade.escape()`
  *      for use with the Jade client-side runtime.js
@@ -899,29 +1015,31 @@ exports.compile = function(str, options){
       : 'undefined'
     , fn;
 
+  str = stripBOM(String(str));
+
   if (options.compileDebug !== false) {
     fn = [
         'var __jade = [{ lineno: 1, filename: ' + filename + ' }];'
       , 'try {'
-      , parse(String(str), options)
+      , parse(str, options)
       , '} catch (err) {'
       , '  rethrow(err, __jade[0].filename, __jade[0].lineno);'
       , '}'
     ].join('\n');
   } else {
-    fn = parse(String(str), options);
+    fn = parse(str, options);
   }
 
   if (client) {
-    fn = 'var attrs = jade.attrs, escape = jade.escape, rethrow = jade.rethrow;\n' + fn;
+    fn = 'attrs = attrs || jade.attrs; escape = escape || jade.escape; rethrow = rethrow || jade.rethrow; merge = merge || jade.merge;\n' + fn;
   }
 
-  fn = new Function('locals, attrs, escape, rethrow', fn);
+  fn = new Function('locals, attrs, escape, rethrow, merge', fn);
 
   if (client) return fn;
 
   return function(locals){
-    return fn(locals, runtime.attrs, runtime.escape, runtime.rethrow);
+    return fn(locals, runtime.attrs, runtime.escape, runtime.rethrow, runtime.merge);
   };
 };
 
@@ -1004,6 +1122,8 @@ require.register("lexer.js", function(module, exports, require){
  * Copyright(c) 2010 TJ Holowaychuk <tj@vision-media.ca>
  * MIT Licensed
  */
+
+var utils = require('./utils');
 
 /**
  * Initialize `Lexer` with the given `str`.
@@ -1191,14 +1311,26 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
+  /**
+   * Interpolated tag.
+   */
+
+  interpolation: function() {
+    var captures;
+    if (captures = /^#\{(.*?)\}/.exec(this.input)) {
+      this.consume(captures[0].length);
+      return this.tok('interpolation', captures[1]);
+    }
+  },
+
   /**
    * Tag.
    */
   
   tag: function() {
     var captures;
-    if (captures = /^(\w[-:\w]*)/.exec(this.input)) {
+    if (captures = /^(\w[-:\w]*)(\/?)/.exec(this.input)) {
       this.consume(captures[0].length);
       var tok, name = captures[1];
       if (':' == name[name.length - 1]) {
@@ -1209,6 +1341,7 @@ Lexer.prototype = {
       } else {
         tok = this.tok('tag', name);
       }
+      tok.selfClosing = !! captures[2];
       return tok;
     }
   },
@@ -1299,11 +1432,12 @@ Lexer.prototype = {
   
   block: function() {
     var captures;
-    if (captures = /^block +(?:(prepend|append) +)?([^\n]+)/.exec(this.input)) {
+    if (captures = /^block\b *(?:(prepend|append) +)?([^\n]*)/.exec(this.input)) {
       this.consume(captures[0].length);
       var mode = captures[1] || 'replace'
         , name = captures[2]
         , tok = this.tok('block', name);
+
       tok.mode = mode;
       return tok;
     }
@@ -1367,12 +1501,20 @@ Lexer.prototype = {
    * Call mixin.
    */
   
-  call: function() {
+  call: function(){
     var captures;
-    if (captures = /^\+([-\w]+)(?: *\((.*)\))?/.exec(this.input)) {
+    if (captures = /^\+([-\w]+)/.exec(this.input)) {
       this.consume(captures[0].length);
       var tok = this.tok('call', captures[1]);
-      tok.args = captures[2];
+      
+      // Check for args (not attributes)
+      if (captures = /^ *\((.*?)\)/.exec(this.input)) {
+        if (!/^ *[-\w]+ *=/.test(captures[1])) {
+          this.consume(captures[0].length);
+          tok.args = captures[1];
+        }
+      }
+      
       return tok;
     }
   },
@@ -1600,6 +1742,11 @@ Lexer.prototype = {
 
       parse(',');
 
+      if ('/' == this.input.charAt(0)) {
+        this.consume(1);
+        tok.selfClosing = true;
+      }
+
       return tok;
     }
   },
@@ -1715,6 +1862,7 @@ Lexer.prototype = {
       || this.pipelessText()
       || this.yield()
       || this.doctype()
+      || this.interpolation()
       || this["case"]()
       || this.when()
       || this["default"]()
@@ -1743,6 +1891,89 @@ Lexer.prototype = {
 };
 
 }); // module: lexer.js
+
+require.register("nodes/attrs.js", function(module, exports, require){
+
+/*!
+ * Jade - nodes - Attrs
+ * Copyright(c) 2010 TJ Holowaychuk <tj@vision-media.ca>
+ * MIT Licensed
+ */
+
+/**
+ * Module dependencies.
+ */
+
+var Node = require('./node'),
+    Block = require('./block');
+
+/**
+ * Initialize a `Attrs` node.
+ *
+ * @api public
+ */
+
+var Attrs = module.exports = function Attrs() {
+  this.attrs = [];
+};
+
+/**
+ * Inherit from `Node`.
+ */
+
+Attrs.prototype = new Node;
+Attrs.prototype.constructor = Attrs;
+
+
+/**
+ * Set attribute `name` to `val`, keep in mind these become
+ * part of a raw js object literal, so to quote a value you must
+ * '"quote me"', otherwise or example 'user.name' is literal JavaScript.
+ *
+ * @param {String} name
+ * @param {String} val
+ * @param {Boolean} escaped
+ * @return {Tag} for chaining
+ * @api public
+ */
+
+Attrs.prototype.setAttribute = function(name, val, escaped){
+  this.attrs.push({ name: name, val: val, escaped: escaped });
+  return this;
+};
+
+/**
+ * Remove attribute `name` when present.
+ *
+ * @param {String} name
+ * @api public
+ */
+
+Attrs.prototype.removeAttribute = function(name){
+  for (var i = 0, len = this.attrs.length; i < len; ++i) {
+    if (this.attrs[i] && this.attrs[i].name == name) {
+      delete this.attrs[i];
+    }
+  }
+};
+
+/**
+ * Get attribute value by `name`.
+ *
+ * @param {String} name
+ * @return {String}
+ * @api public
+ */
+
+Attrs.prototype.getAttribute = function(name){
+  for (var i = 0, len = this.attrs.length; i < len; ++i) {
+    if (this.attrs[i] && this.attrs[i].name == name) {
+      return this.attrs[i].val;
+    }
+  }
+};
+
+}); // module: nodes/attrs.js
 
 require.register("nodes/block-comment.js", function(module, exports, require){
 
@@ -2225,7 +2456,7 @@ require.register("nodes/mixin.js", function(module, exports, require){
  * Module dependencies.
  */
 
-var Node = require('./node');
+var Attrs = require('./attrs');
 
 /**
  * Initialize a new `Mixin` with `name` and `block`.
@@ -2240,14 +2471,15 @@ var Mixin = module.exports = function Mixin(name, args, block, call){
   this.name = name;
   this.args = args;
   this.block = block;
+  this.attrs = [];
   this.call = call;
 };
 
 /**
- * Inherit from `Node`.
+ * Inherit from `Attrs`.
  */
 
-Mixin.prototype = new Node;
+Mixin.prototype = new Attrs;
 Mixin.prototype.constructor = Mixin;
 
 
@@ -2295,7 +2527,7 @@ require.register("nodes/tag.js", function(module, exports, require){
  * Module dependencies.
  */
 
-var Node = require('./node'),
+var Attrs = require('./attrs'),
     Block = require('./block'),
     inlineTags = require('../inline-tags');
 
@@ -2314,10 +2546,10 @@ var Tag = module.exports = function Tag(name, block) {
 };
 
 /**
- * Inherit from `Node`.
+ * Inherit from `Attrs`.
  */
 
-Tag.prototype = new Node;
+Tag.prototype = new Attrs;
 Tag.prototype.constructor = Tag;
 
 
@@ -2334,54 +2566,6 @@ Tag.prototype.clone = function(){
   clone.attrs = this.attrs;
   clone.textOnly = this.textOnly;
   return clone;
-};
-
-/**
- * Set attribute `name` to `val`, keep in mind these become
- * part of a raw js object literal, so to quote a value you must
- * '"quote me"', otherwise or example 'user.name' is literal JavaScript.
- *
- * @param {String} name
- * @param {String} val
- * @param {Boolean} escaped
- * @return {Tag} for chaining
- * @api public
- */
-
-Tag.prototype.setAttribute = function(name, val, escaped){
-  this.attrs.push({ name: name, val: val, escaped: escaped });
-  return this;
-};
-
-/**
- * Remove attribute `name` when present.
- *
- * @param {String} name
- * @api public
- */
-
-Tag.prototype.removeAttribute = function(name){
-  for (var i = 0, len = this.attrs.length; i < len; ++i) {
-    if (this.attrs[i] && this.attrs[i].name == name) {
-      delete this.attrs[i];
-    }
-  }
-};
-
-/**
- * Get attribute value by `name`.
- *
- * @param {String} name
- * @return {String}
- * @api public
- */
-
-Tag.prototype.getAttribute = function(name){
-  for (var i = 0, len = this.attrs.length; i < len; ++i) {
-    if (this.attrs[i] && this.attrs[i].name == name) {
-      return this.attrs[i].val;
-    }
-  }
 };
 
 /**
@@ -2610,6 +2794,9 @@ Parser.prototype = {
       this.context(parser);
       var ast = parser.parse();
       this.context();
+      // hoist mixins
+      for (var name in this.mixins)
+        ast.unshift(this.mixins[name]);
       return ast;
     }
 
@@ -2657,6 +2844,7 @@ Parser.prototype = {
    * | yield
    * | id
    * | class
+   * | interpolation
    */
   
   parseExpr: function(){
@@ -2691,6 +2879,8 @@ Parser.prototype = {
         return this.parseCode();
       case 'call':
         return this.parseCall();
+      case 'interpolation':
+        return this.parseInterpolation();
       case 'yield':
         this.advance();
         var block = new nodes.Block;
@@ -2854,6 +3044,10 @@ Parser.prototype = {
       , node = new nodes.Each(tok.code, tok.val, tok.key);
     node.line = this.line();
     node.block = this.block();
+    if (this.peek().type == 'code' && this.peek().val == 'else') {
+      this.advance();
+      node.alternative = this.block();
+    }
     return node;
   },
 
@@ -2950,6 +3144,8 @@ Parser.prototype = {
     var path = join(dir, path)
       , str = fs.readFileSync(path, 'utf8')
      , parser = new Parser(str, path, this.options);
+    parser.blocks = this.blocks;
+    parser.mixins = this.mixins;
 
     this.context(parser);
     var ast = parser.parse();
@@ -2971,13 +3167,11 @@ Parser.prototype = {
     var tok = this.expect('call')
       , name = tok.val
       , args = tok.args
-      , mixin = this.mixins[name];
+      , mixin = new nodes.Mixin(name, args, new nodes.Block, true);
 
-    var block = 'indent' == this.peek().type
-      ? this.block()
-      : null;
-
-    return new nodes.Mixin(name, args, block, true);
+    this.tag(mixin);
+    if (mixin.block.isEmpty()) mixin.block = null;
+    return mixin;
   },
 
   /**
@@ -3053,6 +3247,17 @@ Parser.prototype = {
   },
 
   /**
+   * interpolation (attrs | class | id)* (text | code | ':')? newline* block?
+   */
+  
+  parseInterpolation: function(){
+    var tok = this.advance();
+    var tag = new nodes.Tag(tok.val);
+    tag.buffer = true;
+    return this.tag(tag);
+  },
+
+  /**
    * tag (attrs | class | id)* (text | code | ':')? newline* block?
    */
   
@@ -3066,9 +3271,20 @@ Parser.prototype = {
       }
     }
 
-    var name = this.advance().val
-      , tag = new nodes.Tag(name)
-      , dot;
+    var tok = this.advance()
+      , tag = new nodes.Tag(tok.val);
+
+    tag.selfClosing = tok.selfClosing;
+
+    return this.tag(tag);
+  },
+
+  /**
+   * Parse tag.
+   */
+
+  tag: function(tag){
+    var dot;
 
     tag.line = this.line();
 
@@ -3086,6 +3302,8 @@ Parser.prototype = {
               , obj = tok.attrs
               , escaped = tok.escaped
               , names = Object.keys(obj);
+
+            if (tok.selfClosing) tag.selfClosing = true;
 
             for (var i = 0, len = names.length; i < len; ++i) {
               var name = names[i]
@@ -3187,7 +3405,54 @@ if (!Object.keys) {
       }
     }
     return arr;
-  } 
+  }
+}
+
+/**
+ * Merge two attribute objects giving precedence
+ * to values in object `b`. Classes are special-cased
+ * allowing for arrays and merging/joining appropriately
+ * resulting in a string.
+ *
+ * @param {Object} a
+ * @param {Object} b
+ * @return {Object} a
+ * @api private
+ */
+
+exports.merge = function merge(a, b) {
+  var ac = a['class'];
+  var bc = b['class'];
+
+  if (ac || bc) {
+    ac = ac || [];
+    bc = bc || [];
+    if (!Array.isArray(ac)) ac = [ac];
+    if (!Array.isArray(bc)) bc = [bc];
+    ac = ac.filter(nulls);
+    bc = bc.filter(nulls);
+    a['class'] = ac.concat(bc).join(' ');
+  }
+
+  for (var key in b) {
+    if (key != 'class') {
+      a[key] = b[key];
+    }
+  }
+
+  return a;
+};
+
+/**
+ * Filter null `val`s.
+ *
+ * @param {Mixed} val
+ * @return {Mixed}
+ * @api private
+ */
+
+function nulls(val) {
+  return val != null;
 }
 
 /**
@@ -3223,7 +3488,7 @@ exports.attrs = function attrs(obj, escaped){
         buf.push(key + "='" + JSON.stringify(val) + "'");
       } else if ('class' == key && Array.isArray(val)) {
         buf.push(key + '="' + exports.escape(val.join(' ')) + '"');
-      } else if (escaped[key]) {
+      } else if (escaped && escaped[key]) {
         buf.push(key + '="' + exports.escape(val) + '"');
       } else {
         buf.push(key + '="' + val + '"');
@@ -3244,7 +3509,7 @@ exports.attrs = function attrs(obj, escaped){
 
 exports.escape = function escape(html){
   return String(html)
-    .replace(/&(?!\w+;)/g, '&amp;')
+    .replace(/&(?!(\w+|\#\d+);)/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
@@ -3267,7 +3532,7 @@ exports.rethrow = function rethrow(err, filename, lineno){
     , str = require('fs').readFileSync(filename, 'utf8')
     , lines = str.split('\n')
     , start = Math.max(lineno - context, 0)
-    , end = Math.min(lines.length, lineno + context); 
+    , end = Math.min(lines.length, lineno + context);
 
   // Error context
   var context = lines.slice(start, end).map(function(line, i){
@@ -3280,7 +3545,7 @@ exports.rethrow = function rethrow(err, filename, lineno){
 
   // Alter exception message
   err.path = filename;
-  err.message = (filename || 'Jade') + ':' + lineno 
+  err.message = (filename || 'Jade') + ':' + lineno
     + '\n' + context + '\n\n' + err.message;
   throw err;
 };
@@ -3361,6 +3626,7 @@ exports.text = function(str){
 };
 }); // module: utils.js
 
+// window.jade = require("jade");
 Jade = require("jade");
 })();
 
