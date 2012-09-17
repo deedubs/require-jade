@@ -3829,7 +3829,7 @@ define({
     write: function (pluginName, name, write) {
         if (name in buildMap) {
             var text = buildMap[name];
-            write("define('"+pluginName+"!"+name+"', function(){ return " + text + "});\n");
+            write("define('"+pluginName+"!"+name+"', ['jade'], function(jade){ return " + text + "});\n");
         }
     },
     //>>excludeEnd('excludeJade')
