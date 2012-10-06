@@ -1,0 +1,49 @@
+{
+   "name": "require-jade",
+   "version": "0.0.2",
+   "description": "A Jade loader plugin for RequireJS.",
+   "keywords": [
+       "requirejs",
+       "jade",
+       "template",
+       "js"
+   ],
+   "author": "Dan Williams <me@deedubs.com>",
+   "contributors": [
+       {
+           "name": "Dan Williams",
+           "email": "me@deedubs.com",
+           "url": "http://deedubs.com"
+       },
+       {
+           "name": "Remy Loubradou",
+           "email": "remyloubradou@gmail.com",
+           "url": "http://remy.calepin.co"
+       },
+       {
+           "name": "Vincent Mac",
+           "email": "vincent@vincentmac.com",
+           "url": "http://vincentmac.com"
+       }
+   ],
+   "bugs": {
+       "url": "https://github.com/rocketlabsdev/require-jade/issues"
+   },
+   "licenses": [
+       {
+           "type": "MIT",
+           "url": "http://opensource.org/licenses/MIT"
+       } 
+   ],
+   "repositories": [
+       {
+           "type": "git",
+           "url": "git://github.com/rocketlabsdev/require-jade.git"
+       } 
+   ],
+   "main": "./jade",
+   "dependencies": {
+    "requirejs": ">=0.26.0"
+    },
+   "devDependencies": {},
+}
