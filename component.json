@@ -1,0 +1,54 @@
+{
+  "name": "require-jade",
+  "description": "A Jade loader plugin for RequireJS.",
+  "version": "0.0.2",
+  "keywords": [
+      "requirejs",
+      "jade",
+      "template",
+      "client",
+      "js"
+  ],
+  "url": "https://github.com/rocketlabsdev/require-jade",
+  "author": {
+    "name": "Dan Williams",
+    "email": "me@deedubs.com"
+  },
+  "contributors": [
+    {
+      "name": "Dan Williams",
+      "email": "me@deedubs.com",
+      "url": "http://deedubs.com"
+    },
+    {
+      "name": "Remy Loubradou",
+      "email": "remyloubradou@gmail.com",
+      "url": "http://remy.calepin.co"
+    },
+    {
+      "name": "Vincent Mac",
+      "email": "vincent@vincentmac.com",
+      "url": "http://vincentmac.com"
+    }
+  ],
+  "bugs": {
+    "url": "https://github.com/rocketlabsdev/require-jade/issues"
+  },
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "http://opensource.org/licenses/MIT"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/rocketlabsdev/require-jade.git"
+  },
+  "dependencies": {
+    "requirejs": ">=0.26.0"
+  },
+  "lib": ".",
+  "main": "jade.js",
+  "readme":"# require-jade\n\nA [Jade](http://jade-lang.com/) loader plugin for [RequireJS](http://requirejs.org).\n\nIt is known to work with RequireJS 0.26.0+.\n\nIn development, it uses XMLHttpRequest to fetch the .jade files, so you can only\nfetch files that are on the same domain as the HTML page, and most browsers place\nrestrictions on using XMLHttpRequest from local file URLs, so use a web server to\nserve your .jade files.\n\n## Usage\n\nReference Jade files via the jade! plugin name:\n\n    require(['jade!userview'], function (userView) {\n      $('.user').html(userView(locals));\n    });\n\nThey will be returned as a Jade template function that accepts locals as the first arg.\n\n# Optimizing\n\nWhen you are ready to deploy your application and want to compile your JS into a single file \nyou can make used of the requireJS optimizer. Jade.js includes optimizer instructions that will \nprecompile the templates and remove the Jade compiler from the compiled source.  Only do this\nif you are not going to be dynamically including more Jade templates. \n\nTo use the activate the instructions just include: \n\n    pragmasOnSave: {\n      excludeJade : true\n    }\n\n## License\n\nAvailable via the MIT or new BSD license.\n\nThe Jade parts are governed by [the Jade license](https://github.com/visionmedia/jade/blob/master/LICENSE).",
+  "_id": "require-jade@0.0.2"
+}
