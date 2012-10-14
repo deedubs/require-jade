@@ -1,6 +1,6 @@
 //>>excludeStart('excludeJade', pragmas.excludeJade)
 (function() {
-var getXhr, Jade, utils,
+var getXhr, Jade,
     progIds = ['Msxml2.XMLHTTP', 'Microsoft.XMLHTTP', 'Msxml2.XMLHTTP.4.0'],
     fetchText = function () {
         throw new Error('Environment unsupported.');
@@ -68,8 +68,7 @@ require.register("compiler.js", function(module, exports, require){
  * Module dependencies.
  */
 
-var nodes = require('./nodes')
-  , filters = require('./filters')
+var filters = require('./filters')
   , doctypes = require('./doctypes')
   , selfClosing = require('./self-closing')
   , runtime = require('./runtime')
