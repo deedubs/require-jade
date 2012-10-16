@@ -3891,6 +3891,8 @@ exports.rethrow = function rethrow(err, filename, lineno){
 
 })({});
 
+define('jade', jade);
+
 //>>excludeStart('excludeJade', pragmas.excludeJade)
 }
 //>>excludeEnd('excludeJade')
