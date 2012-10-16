@@ -1,6 +1,6 @@
 //>>excludeStart('excludeJade', pragmas.excludeJade)
 (function() {
-var getXhr, Jade,
+var getXhr, Jade = {},
     progIds = ['Msxml2.XMLHTTP', 'Microsoft.XMLHTTP', 'Msxml2.XMLHTTP.4.0'],
     fetchText = function () {
         throw new Error('Environment unsupported.');
@@ -84,13 +84,13 @@ var filters = require('./filters')
        }
      }
      return arr;
-   }
+   };
  }
 
  if (!String.prototype.trimLeft) {
    String.prototype.trimLeft = function(){
      return this.replace(/^\s+/, '');
-   }
+   };
  }
 
 
@@ -164,7 +164,7 @@ Compiler.prototype = {
 
     if (this.lastBufferedIdx == this.buf.length) {
       this.lastBuffered += str;
-      this.buf[this.lastBufferedIdx - 1] = "buf.push('" + this.lastBuffered + "');"
+      this.buf[this.lastBufferedIdx - 1] = "buf.push('" + this.lastBuffered + "');";
     } else {
       this.buf.push("buf.push('" + str + "');");
       this.lastBuffered = str;
@@ -287,13 +287,13 @@ Compiler.prototype = {
   visitBlock: function(block){
     var len = block.nodes.length
       , escape = this.escape
-      , pp = this.pp
+      , pp = this.pp;
 
     // Block keyword has a special meaning in mixins
     if (this.parentIndents && block.mode) {
-      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
+      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');");
       this.buf.push('block && block();');
-      if (pp) this.buf.push("__indent.pop();")
+      if (pp) this.buf.push("__indent.pop();");
       return;
     }
 
@@ -347,7 +347,7 @@ Compiler.prototype = {
       , pp = this.pp;
 
     if (mixin.call) {
-      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
+      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');");
       if (block || attrs.length) {
 
         this.buf.push(name + '.call({');
@@ -389,7 +389,7 @@ Compiler.prototype = {
       } else {
         this.buf.push(name + '(' + args + ');');
       }
-      if (pp) this.buf.push("__indent.pop();")
+      if (pp) this.buf.push("__indent.pop();");
     } else {
       this.buf.push('var ' + name + ' = function(' + args + '){');
       this.buf.push('var block = this.block, attributes = this.attributes || {}, escaped = this.escaped || {};');
@@ -476,7 +476,7 @@ Compiler.prototype = {
     if (filter.isASTFilter) {
       this.buf.push(fn(filter.block, this, filter.attrs));
     } else {
-      var text = filter.block.nodes.map(function(node){ return node.val }).join('\n');
+      var text = filter.block.nodes.map(function(node){ return node.val; }).join('\n');
       filter.attrs = filter.attrs || {};
       filter.attrs.filename = this.options.filename;
       this.buffer(utils.text(fn(text, filter.attrs)));
@@ -634,7 +634,7 @@ Compiler.prototype = {
     var buf = []
       , classes = []
       , escaped = {}
-      , constant = attrs.every(function(attr){ return isConstant(attr.val) })
+      , constant = attrs.every(function(attr){ return isConstant(attr.val); })
       , inherits = false;
 
     if (this.terse) buf.push('terse: true');
@@ -761,7 +761,7 @@ module.exports = {
    */
 
   stylus: function(str, options){
-    var ret;
+    var ret = '';
     str = str.replace(/\\n/g, '\n');
     var stylus = require('stylus');
     stylus(str, options).render(function(err, css){
@@ -776,7 +776,7 @@ module.exports = {
    */
 
   less: function(str){
-    var ret;
+    var ret = '';
     str = str.replace(/\\n/g, '\n');
     require('less').render(str, function(err, css){
       if (err) throw err;
@@ -874,7 +874,7 @@ require.register("jade.js", function(module, exports, require){
 var Parser = require('./parser')
   , Lexer = require('./lexer')
   , Compiler = require('./compiler')
-  , runtime = require('./runtime')
+  , runtime = require('./runtime');
 
 /**
  * Library version.
@@ -952,9 +952,9 @@ exports.cache = {};
  */
 
 function parse(str, options){
+  // Parse
+  var parser = new Parser(str, options.filename, options);
   try {
-    // Parse
-    var parser = new Parser(str, options.filename, options);
 
     // Compile
     var compiler = new (options.compiler || Compiler)(parser.parse(), options)
@@ -1121,8 +1121,6 @@ require.register("lexer.js", function(module, exports, require){
  * MIT Licensed
  */
 
-var utils = require('./utils');
-
 /**
  * Initialize `Lexer` with the given `str`.
  *
@@ -1168,7 +1166,7 @@ Lexer.prototype = {
         type: type
       , line: this.lineno
       , val: val
-    }
+    };
   },
 
   /**
@@ -1904,8 +1902,7 @@ require.register("nodes/attrs.js", function(module, exports, require){
  * Module dependencies.
  */
 
-var Node = require('./node'),
-    Block = require('./block');
+var Node = require('./node');
 
 /**
  * Initialize a `Attrs` node.
@@ -2371,7 +2368,7 @@ var Filter = module.exports = function Filter(name, block, attrs) {
   this.name = name;
   this.block = block;
   this.attrs = attrs;
-  this.isASTFilter = !block.nodes.every(function(node){ return node.isText });
+  this.isASTFilter = !block.nodes.every(function(node){ return node.isText; });
 };
 
 /**
@@ -2941,7 +2938,7 @@ Parser.prototype = {
    */
 
   parseWhen: function(){
-    var val = this.expect('when').val
+    var val = this.expect('when').val;
     return new nodes.Case.When(val, this.parseBlockExpansion());
   },
 
@@ -3070,8 +3067,9 @@ Parser.prototype = {
     var path = this.expect('extends').val.trim()
       , dir = dirname(this.filename);
 
-    var path = join(dir, path + '.jade')
-      , str = fs.readFileSync(path, 'utf8')
+    path = join(dir, path + '.jade');
+
+    var str = fs.readFileSync(path, 'utf8')
       , parser = new Parser(str, path, this.options);
 
     parser.blocks = this.blocks;
@@ -3286,7 +3284,7 @@ Parser.prototype = {
    */
 
   tag: function(tag){
-    var dot;
+    var dot = '';
 
     tag.line = this.line();
 
@@ -3654,7 +3652,7 @@ if (typeof window !== "undefined" && window.navigator && window.document) {
     // Browser action
     getXhr = function () {
         //Would love to dump the ActiveX crap in here. Need IE 6 to die first.
-        var xhr, i, progId;
+        var xhr = null, i, progId;
         if (typeof XMLHttpRequest !== "undefined") {
             return new XMLHttpRequest();
         } else {
@@ -3743,7 +3741,7 @@ if (!Object.keys) {
       }
     }
     return arr;
-  }
+  };
 }
 
 /**
@@ -3922,8 +3920,13 @@ define({
 	    }
 	    //>>excludeEnd('excludeJadeOnSave')
         if (name in buildMap) {
-            var text = buildMap[name];
-            write("define('"+pluginName+"!"+name+"', ['jade'], function(jade){ return " + text + "});\n");
+            var text = buildMap[name],
+            	defineName = '';
+            //>>excludeStart('excludeJadeOnSave', pragmas.excludeJadeOnSave)
+            defineName += pluginName + "!";
+            //>>excludeEnd('excludeJadeOnSave')
+            defineName += name;
+            write("define('"+defineName+"', ['jade'], function(jade){ return " + text + "});\n");
         }
     },
     //>>excludeEnd('excludeJade')
