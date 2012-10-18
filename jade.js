@@ -1,12 +1,12 @@
 //>>excludeStart('excludeJade', pragmas.excludeJade)
 (function() {
-var getXhr, Jade,
+var getXhr, Jade = {},
     progIds = ['Msxml2.XMLHTTP', 'Microsoft.XMLHTTP', 'Msxml2.XMLHTTP.4.0'],
     fetchText = function () {
         throw new Error('Environment unsupported.');
     },
     buildMap = [];
-    
+
 (function() {
 
 // CommonJS require()
@@ -40,11 +40,11 @@ require.register = function (path, fn){
 require.relative = function (parent) {
     return function(p){
       if ('.' != p.charAt(0)) return require(p);
-      
+
       var path = parent.split('/')
         , segs = p.split('/');
       path.pop();
-      
+
       for (var i = 0; i < segs.length; i++) {
         var seg = segs[i];
         if ('..' == seg) path.pop();
@@ -68,8 +68,7 @@ require.register("compiler.js", function(module, exports, require){
  * Module dependencies.
  */
 
-var nodes = require('./nodes')
-  , filters = require('./filters')
+var filters = require('./filters')
   , doctypes = require('./doctypes')
   , selfClosing = require('./self-closing')
   , runtime = require('./runtime')
@@ -85,13 +84,13 @@ var nodes = require('./nodes')
        }
      }
      return arr;
-   }
+   };
  }
 
  if (!String.prototype.trimLeft) {
    String.prototype.trimLeft = function(){
      return this.replace(/^\s+/, '');
-   }
+   };
  }
 
 
@@ -165,7 +164,7 @@ Compiler.prototype = {
 
     if (this.lastBufferedIdx == this.buf.length) {
       this.lastBuffered += str;
-      this.buf[this.lastBufferedIdx - 1] = "buf.push('" + this.lastBuffered + "');"
+      this.buf[this.lastBufferedIdx - 1] = "buf.push('" + this.lastBuffered + "');";
     } else {
       this.buf.push("buf.push('" + str + "');");
       this.lastBuffered = str;
@@ -288,13 +287,13 @@ Compiler.prototype = {
   visitBlock: function(block){
     var len = block.nodes.length
       , escape = this.escape
-      , pp = this.pp
+      , pp = this.pp;
 
     // Block keyword has a special meaning in mixins
     if (this.parentIndents && block.mode) {
-      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
+      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');");
       this.buf.push('block && block();');
-      if (pp) this.buf.push("__indent.pop();")
+      if (pp) this.buf.push("__indent.pop();");
       return;
     }
 
@@ -348,7 +347,7 @@ Compiler.prototype = {
       , pp = this.pp;
 
     if (mixin.call) {
-      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
+      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');");
       if (block || attrs.length) {
 
         this.buf.push(name + '.call({');
@@ -390,7 +389,7 @@ Compiler.prototype = {
       } else {
         this.buf.push(name + '(' + args + ');');
       }
-      if (pp) this.buf.push("__indent.pop();")
+      if (pp) this.buf.push("__indent.pop();");
     } else {
       this.buf.push('var ' + name + ' = function(' + args + '){');
       this.buf.push('var block = this.block, attributes = this.attributes || {}, escaped = this.escaped || {};');
@@ -477,7 +476,7 @@ Compiler.prototype = {
     if (filter.isASTFilter) {
       this.buf.push(fn(filter.block, this, filter.attrs));
     } else {
-      var text = filter.block.nodes.map(function(node){ return node.val }).join('\n');
+      var text = filter.block.nodes.map(function(node){ return node.val; }).join('\n');
       filter.attrs = filter.attrs || {};
       filter.attrs.filename = this.options.filename;
       this.buffer(utils.text(fn(text, filter.attrs)));
@@ -635,7 +634,7 @@ Compiler.prototype = {
     var buf = []
       , classes = []
       , escaped = {}
-      , constant = attrs.every(function(attr){ return isConstant(attr.val) })
+      , constant = attrs.every(function(attr){ return isConstant(attr.val); })
       , inherits = false;
 
     if (this.terse) buf.push('terse: true');
@@ -738,58 +737,58 @@ require.register("filters.js", function(module, exports, require){
  */
 
 module.exports = {
-  
+
   /**
    * Wrap text with CDATA block.
    */
-  
+
   cdata: function(str){
     return '<![CDATA[\\n' + str + '\\n]]>';
   },
-  
+
   /**
    * Transform sass to css, wrapped in style tags.
    */
-  
+
   sass: function(str){
     str = str.replace(/\\n/g, '\n');
     var sass = require('sass').render(str).replace(/\n/g, '\\n');
-    return '<style type="text/css">' + sass + '</style>'; 
+    return '<style type="text/css">' + sass + '</style>';
   },
-  
+
   /**
    * Transform stylus to css, wrapped in style tags.
    */
-  
+
   stylus: function(str, options){
-    var ret;
+    var ret = '';
     str = str.replace(/\\n/g, '\n');
     var stylus = require('stylus');
     stylus(str, options).render(function(err, css){
       if (err) throw err;
       ret = css.replace(/\n/g, '\\n');
     });
-    return '<style type="text/css">' + ret + '</style>'; 
+    return '<style type="text/css">' + ret + '</style>';
   },
-  
+
   /**
    * Transform less to css, wrapped in style tags.
    */
-  
+
   less: function(str){
-    var ret;
+    var ret = '';
     str = str.replace(/\\n/g, '\n');
     require('less').render(str, function(err, css){
       if (err) throw err;
-      ret = '<style type="text/css">' + css.replace(/\n/g, '\\n') + '</style>';  
+      ret = '<style type="text/css">' + css.replace(/\n/g, '\\n') + '</style>';
     });
     return ret;
   },
-  
+
   /**
    * Transform markdown to html.
    */
-  
+
   markdown: function(str){
     var md;
 
@@ -816,7 +815,7 @@ module.exports = {
     str = str.replace(/\\n/g, '\n');
     return md.parse(str).replace(/\n/g, '\\n').replace(/'/g,'&#39;');
   },
-  
+
   /**
    * Transform coffeescript to javascript.
    */
@@ -875,7 +874,7 @@ require.register("jade.js", function(module, exports, require){
 var Parser = require('./parser')
   , Lexer = require('./lexer')
   , Compiler = require('./compiler')
-  , runtime = require('./runtime')
+  , runtime = require('./runtime');
 
 /**
  * Library version.
@@ -953,9 +952,9 @@ exports.cache = {};
  */
 
 function parse(str, options){
+  // Parse
+  var parser = new Parser(str, options.filename, options);
   try {
-    // Parse
-    var parser = new Parser(str, options.filename, options);
 
     // Compile
     var compiler = new (options.compiler || Compiler)(parser.parse(), options)
@@ -1122,8 +1121,6 @@ require.register("lexer.js", function(module, exports, require){
  * MIT Licensed
  */
 
-var utils = require('./utils');
-
 /**
  * Initialize `Lexer` with the given `str`.
  *
@@ -1154,7 +1151,7 @@ var Lexer = module.exports = function Lexer(str, options) {
  */
 
 Lexer.prototype = {
-  
+
   /**
    * Construct a token with the given `type` and `val`.
    *
@@ -1163,26 +1160,26 @@ Lexer.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   tok: function(type, val){
     return {
         type: type
       , line: this.lineno
       , val: val
-    }
+    };
   },
-  
+
   /**
    * Consume the given `len` of input.
    *
    * @param {Number} len
    * @api private
    */
-  
+
   consume: function(len){
     this.input = this.input.substr(len);
   },
-  
+
   /**
    * Scan for `type` with the given `regexp`.
    *
@@ -1191,7 +1188,7 @@ Lexer.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   scan: function(regexp, type){
     var captures;
     if (captures = regexp.exec(this.input)) {
@@ -1199,18 +1196,18 @@ Lexer.prototype = {
       return this.tok(type, captures[1]);
     }
   },
-  
+
   /**
    * Defer the given `tok`.
    *
    * @param {Object} tok
    * @api private
    */
-  
+
   defer: function(tok){
     this.deferredTokens.push(tok);
   },
-  
+
   /**
    * Lookahead `n` tokens.
    *
@@ -1218,13 +1215,13 @@ Lexer.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   lookahead: function(n){
     var fetch = n - this.stash.length;
     while (fetch-- > 0) this.stash.push(this.next());
     return this.stash[--n];
   },
-  
+
   /**
    * Return the indexOf `start` / `end` delimiters.
    *
@@ -1233,7 +1230,7 @@ Lexer.prototype = {
    * @return {Number}
    * @api private
    */
-  
+
   indexOfDelimiters: function(start, end){
     var str = this.input
       , nstart = 0
@@ -1251,29 +1248,29 @@ Lexer.prototype = {
     }
     return pos;
   },
-  
+
   /**
    * Stashed token.
    */
-  
+
   stashed: function() {
     return this.stash.length
       && this.stash.shift();
   },
-  
+
   /**
    * Deferred token.
    */
-  
+
   deferred: function() {
-    return this.deferredTokens.length 
+    return this.deferredTokens.length
       && this.deferredTokens.shift();
   },
-  
+
   /**
    * end-of-source.
    */
-  
+
   eos: function() {
     if (this.input.length) return;
     if (this.indentStack.length) {
@@ -1287,7 +1284,7 @@ Lexer.prototype = {
   /**
    * Blank line.
    */
-  
+
   blank: function() {
     var captures;
     if (captures = /^\n *\n/.exec(this.input)) {
@@ -1300,7 +1297,7 @@ Lexer.prototype = {
   /**
    * Comment.
    */
-  
+
   comment: function() {
     var captures;
     if (captures = /^ *\/\/(-)?([^\n]*)/.exec(this.input)) {
@@ -1326,7 +1323,7 @@ Lexer.prototype = {
   /**
    * Tag.
    */
-  
+
   tag: function() {
     var captures;
     if (captures = /^(\w[-:\w]*)(\/?)/.exec(this.input)) {
@@ -1344,19 +1341,19 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Filter.
    */
-  
+
   filter: function() {
     return this.scan(/^:(\w+)/, 'filter');
   },
-  
+
   /**
    * Doctype.
    */
-  
+
   doctype: function() {
     return this.scan(/^(?:!!!|doctype) *([^\n]+)?/, 'doctype');
   },
@@ -1364,23 +1361,23 @@ Lexer.prototype = {
   /**
    * Id.
    */
-  
+
   id: function() {
     return this.scan(/^#([\w-]+)/, 'id');
   },
-  
+
   /**
    * Class.
    */
-  
+
   className: function() {
     return this.scan(/^\.([\w-]+)/, 'class');
   },
-  
+
   /**
    * Text.
    */
-  
+
   text: function() {
     return this.scan(/^(?:\| ?| ?)?([^\n]+)/, 'text');
   },
@@ -1388,7 +1385,7 @@ Lexer.prototype = {
   /**
    * Extends.
    */
-  
+
   "extends": function() {
     return this.scan(/^extends? +([^\n]+)/, 'extends');
   },
@@ -1396,7 +1393,7 @@ Lexer.prototype = {
   /**
    * Block prepend.
    */
-  
+
   prepend: function() {
     var captures;
     if (captures = /^prepend +([^\n]+)/.exec(this.input)) {
@@ -1408,11 +1405,11 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Block append.
    */
-  
+
   append: function() {
     var captures;
     if (captures = /^append +([^\n]+)/.exec(this.input)) {
@@ -1428,7 +1425,7 @@ Lexer.prototype = {
   /**
    * Block.
    */
-  
+
   block: function() {
     var captures;
     if (captures = /^block\b *(?:(prepend|append) +)?([^\n]*)/.exec(this.input)) {
@@ -1445,7 +1442,7 @@ Lexer.prototype = {
   /**
    * Yield.
    */
-  
+
   yield: function() {
     return this.scan(/^yield */, 'yield');
   },
@@ -1453,7 +1450,7 @@ Lexer.prototype = {
   /**
    * Include.
    */
-  
+
   include: function() {
     return this.scan(/^include +([^\n]+)/, 'include');
   },
@@ -1461,7 +1458,7 @@ Lexer.prototype = {
   /**
    * Case.
    */
-  
+
   "case": function() {
     return this.scan(/^case +([^\n]+)/, 'case');
   },
@@ -1469,7 +1466,7 @@ Lexer.prototype = {
   /**
    * When.
    */
-  
+
   when: function() {
     return this.scan(/^when +([^:\n]+)/, 'when');
   },
@@ -1477,7 +1474,7 @@ Lexer.prototype = {
   /**
    * Default.
    */
-  
+
   "default": function() {
     return this.scan(/^default */, 'default');
   },
@@ -1485,7 +1482,7 @@ Lexer.prototype = {
   /**
    * Assignment.
    */
-  
+
   assignment: function() {
     var captures;
     if (captures = /^(\w+) += *([^;\n]+)( *;? *)/.exec(this.input)) {
@@ -1499,13 +1496,13 @@ Lexer.prototype = {
   /**
    * Call mixin.
    */
-  
+
   call: function(){
     var captures;
     if (captures = /^\+([-\w]+)/.exec(this.input)) {
       this.consume(captures[0].length);
       var tok = this.tok('call', captures[1]);
-      
+
       // Check for args (not attributes)
       if (captures = /^ *\((.*?)\)/.exec(this.input)) {
         if (!/^ *[-\w]+ *=/.test(captures[1])) {
@@ -1513,7 +1510,7 @@ Lexer.prototype = {
           tok.args = captures[1];
         }
       }
-      
+
       return tok;
     }
   },
@@ -1535,7 +1532,7 @@ Lexer.prototype = {
   /**
    * Conditional.
    */
-  
+
   conditional: function() {
     var captures;
     if (captures = /^(if|unless|else if|else)\b([^\n]*)/.exec(this.input)) {
@@ -1557,7 +1554,7 @@ Lexer.prototype = {
   /**
    * While.
    */
-  
+
   "while": function() {
     var captures;
     if (captures = /^while +([^\n]+)/.exec(this.input)) {
@@ -1569,7 +1566,7 @@ Lexer.prototype = {
   /**
    * Each.
    */
-  
+
   each: function() {
     var captures;
     if (captures = /^(?:- *)?(?:each|for) +(\w+)(?: *, *(\w+))? * in *([^\n]+)/.exec(this.input)) {
@@ -1580,11 +1577,11 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Code.
    */
-  
+
   code: function() {
     var captures;
     if (captures = /^(!?=|-)([^\n]+)/.exec(this.input)) {
@@ -1597,11 +1594,11 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Attributes.
    */
-  
+
   attrs: function() {
     if ('(' == this.input.charAt(0)) {
       var index = this.indexOfDelimiters('(', ')')
@@ -1751,11 +1748,11 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Indent | Outdent | Newline.
    */
-  
+
   indent: function() {
     var captures, re;
 
@@ -1813,7 +1810,7 @@ Lexer.prototype = {
   },
 
   /**
-   * Pipe-less text consumed only when 
+   * Pipe-less text consumed only when
    * pipeless is true;
    */
 
@@ -1843,19 +1840,19 @@ Lexer.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   advance: function(){
     return this.stashed()
       || this.next();
   },
-  
+
   /**
    * Return the next token object.
    *
    * @return {Object}
    * @api private
    */
-  
+
   next: function() {
     return this.deferred()
       || this.blank()
@@ -1905,8 +1902,7 @@ require.register("nodes/attrs.js", function(module, exports, require){
  * Module dependencies.
  */
 
-var Node = require('./node'),
-    Block = require('./block');
+var Node = require('./node');
 
 /**
  * Initialize a `Attrs` node.
@@ -2285,7 +2281,7 @@ require.register("nodes/doctype.js", function(module, exports, require){
 var Node = require('./node');
 
 /**
- * Initialize a `Doctype` with the given `val`. 
+ * Initialize a `Doctype` with the given `val`.
  *
  * @param {String} val
  * @api public
@@ -2360,7 +2356,7 @@ var Node = require('./node')
   , Block = require('./block');
 
 /**
- * Initialize a `Filter` node with the given 
+ * Initialize a `Filter` node with the given
  * filter `name` and `block`.
  *
  * @param {String} name
@@ -2372,7 +2368,7 @@ var Filter = module.exports = function Filter(name, block, attrs) {
   this.name = name;
   this.block = block;
   this.attrs = attrs;
-  this.isASTFilter = !block.nodes.every(function(node){ return node.isText });
+  this.isASTFilter = !block.nodes.every(function(node){ return node.isText; });
 };
 
 /**
@@ -2596,13 +2592,13 @@ Tag.prototype.canInline = function(){
     if (node.isBlock) return node.nodes.every(isInline);
     return node.isText || (node.isInline && node.isInline());
   }
-  
+
   // Empty tag
   if (!nodes.length) return true;
-  
+
   // Text-only or inline-only tag
   if (1 == nodes.length) return isInline(nodes[0]);
-  
+
   // Multi-line inline-only tag
   if (this.block.nodes.every(isInline)) {
     for (var i = 1, len = nodes.length; i < len; ++i) {
@@ -2611,7 +2607,7 @@ Tag.prototype.canInline = function(){
     }
     return true;
   }
-  
+
   // Mixed tag
   return false;
 };
@@ -2739,29 +2735,29 @@ Parser.prototype = {
   skip: function(n){
     while (n--) this.advance();
   },
-  
+
   /**
    * Single token lookahead.
    *
    * @return {Object}
    * @api private
    */
-  
+
   peek: function() {
     return this.lookahead(1);
   },
-  
+
   /**
    * Return lexer lineno.
    *
    * @return {Number}
    * @api private
    */
-  
+
   line: function() {
     return this.lexer.lineno;
   },
-  
+
   /**
    * `n` token lookahead.
    *
@@ -2769,18 +2765,18 @@ Parser.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   lookahead: function(n){
     return this.lexer.lookahead(n);
   },
-  
+
   /**
    * Parse input returning a string of js for evaluation.
    *
    * @return {String}
    * @api public
    */
-  
+
   parse: function(){
     var block = new nodes.Block, parser;
     block.line = this.line();
@@ -2805,14 +2801,14 @@ Parser.prototype = {
 
     return block;
   },
-  
+
   /**
    * Expect the given type, or throw an exception.
    *
    * @param {String} type
    * @api private
    */
-  
+
   expect: function(type){
     if (this.peek().type === type) {
       return this.advance();
@@ -2820,20 +2816,20 @@ Parser.prototype = {
       throw new Error('expected "' + type + '", but got "' + this.peek().type + '"');
     }
   },
-  
+
   /**
    * Accept the given `type`.
    *
    * @param {String} type
    * @api private
    */
-  
+
   accept: function(type){
     if (this.peek().type === type) {
       return this.advance();
     }
   },
-  
+
   /**
    *   tag
    * | doctype
@@ -2849,7 +2845,7 @@ Parser.prototype = {
    * | class
    * | interpolation
    */
-  
+
   parseExpr: function(){
     switch (this.peek().type) {
       case 'tag':
@@ -2899,11 +2895,11 @@ Parser.prototype = {
         throw new Error('unexpected token "' + this.peek().type + '"');
     }
   },
-  
+
   /**
    * Text
    */
-  
+
   parseText: function(){
     var tok = this.expect('text')
       , node = new nodes.Text(tok.val);
@@ -2942,10 +2938,10 @@ Parser.prototype = {
    */
 
   parseWhen: function(){
-    var val = this.expect('when').val
+    var val = this.expect('when').val;
     return new nodes.Case.When(val, this.parseBlockExpansion());
   },
-  
+
   /**
    * default
    */
@@ -2958,7 +2954,7 @@ Parser.prototype = {
   /**
    * code
    */
-  
+
   parseCode: function(){
     var tok = this.expect('code')
       , node = new nodes.Code(tok.val, tok.buffer, tok.escape)
@@ -2973,11 +2969,11 @@ Parser.prototype = {
     }
     return node;
   },
-  
+
   /**
    * comment
    */
-  
+
   parseComment: function(){
     var tok = this.expect('comment')
       , node;
@@ -2991,22 +2987,22 @@ Parser.prototype = {
     node.line = this.line();
     return node;
   },
-  
+
   /**
    * doctype
    */
-  
+
   parseDoctype: function(){
     var tok = this.expect('doctype')
       , node = new nodes.Doctype(tok.val);
     node.line = this.line();
     return node;
   },
-  
+
   /**
    * filter attrs? text-block
    */
-  
+
   parseFilter: function(){
     var block
       , tok = this.expect('filter')
@@ -3020,11 +3016,11 @@ Parser.prototype = {
     node.line = this.line();
     return node;
   },
-  
+
   /**
    * tag ':' attrs? block
    */
-  
+
   parseASTFilter: function(){
     var block
       , tok = this.expect('tag')
@@ -3037,11 +3033,11 @@ Parser.prototype = {
     node.line = this.line();
     return node;
   },
-  
+
   /**
    * each block
    */
-  
+
   parseEach: function(){
     var tok = this.expect('each')
       , node = new nodes.Each(tok.code, tok.val, tok.key);
@@ -3071,8 +3067,9 @@ Parser.prototype = {
     var path = this.expect('extends').val.trim()
       , dir = dirname(this.filename);
 
-    var path = join(dir, path + '.jade')
-      , str = fs.readFileSync(path, 'utf8')
+    path = join(dir, path + '.jade');
+
+    var str = fs.readFileSync(path, 'utf8')
       , parser = new Parser(str, path, this.options);
 
     parser.blocks = this.blocks;
@@ -3233,7 +3230,7 @@ Parser.prototype = {
   /**
    * indent expr* outdent
    */
-  
+
   block: function(){
     var block = new nodes.Block;
     block.line = this.line();
@@ -3252,7 +3249,7 @@ Parser.prototype = {
   /**
    * interpolation (attrs | class | id)* (text | code | ':')? newline* block?
    */
-  
+
   parseInterpolation: function(){
     var tok = this.advance();
     var tag = new nodes.Tag(tok.val);
@@ -3263,7 +3260,7 @@ Parser.prototype = {
   /**
    * tag (attrs | class | id)* (text | code | ':')? newline* block?
    */
-  
+
   parseTag: function(){
     // ast-filter look-ahead
     var i = 2;
@@ -3287,7 +3284,7 @@ Parser.prototype = {
    */
 
   tag: function(tag){
-    var dot;
+    var dot = '';
 
     tag.line = this.line();
 
@@ -3370,7 +3367,7 @@ Parser.prototype = {
         }
       }
     }
-    
+
     return tag;
   }
 };
@@ -3579,7 +3576,7 @@ module.exports = [
 
 require.register("utils.js", function(module, exports, require){
 
-/*!
+ /*!
  * Jade - utils
  * Copyright(c) 2010 TJ Holowaychuk <tj@vision-media.ca>
  * MIT Licensed
@@ -3647,6 +3644,7 @@ exports.merge = function(a, b) {
 
 // window.jade = require("jade");
 Jade = require("jade");
+utils = require("runtime");
 })();
 
 if (typeof window !== "undefined" && window.navigator && window.document) {
@@ -3654,7 +3652,7 @@ if (typeof window !== "undefined" && window.navigator && window.document) {
     // Browser action
     getXhr = function () {
         //Would love to dump the ActiveX crap in here. Need IE 6 to die first.
-        var xhr, i, progId;
+        var xhr = null, i, progId;
         if (typeof XMLHttpRequest !== "undefined") {
             return new XMLHttpRequest();
         } else {
@@ -3694,10 +3692,10 @@ if (typeof window !== "undefined" && window.navigator && window.document) {
 } else if (typeof process !== "undefined" &&
            process.versions &&
            !!process.versions.node) {
-             
-    
-    
-    
+
+
+
+
     //Using special require.nodeRequire, something added by r.js.
     fs = require.nodeRequire('fs');
     fetchText = function (path, callback) {
@@ -3706,10 +3704,11 @@ if (typeof window !== "undefined" && window.navigator && window.document) {
 }
 //>>excludeEnd('excludeJade')
 
+var jadeDefinition = '';
 
-//>>excludeStart('excludeJade', pragmas.excludeJade)
+//>>excludeStart('excludeJadeOnSave', pragmas.excludeJadeOnSave)
 if(false) {
-//>>excludeEnd('excludeJade')
+//>>excludeEnd('excludeJadeOnSave')
 
 
 var jade = (function(exports){
@@ -3742,7 +3741,7 @@ if (!Object.keys) {
       }
     }
     return arr;
-  }
+  };
 }
 
 /**
@@ -3857,16 +3856,16 @@ exports.escape = function escape(html){
  * the jade in `filename` at the given `lineno`.
  *
  * @param {Error} err
+ * @param {String} str
  * @param {String} filename
  * @param {String} lineno
  * @api private
  */
 
-exports.rethrow = function rethrow(err, filename, lineno){
+exports.rethrow = function rethrow(err, str, filename, lineno){
   if (!filename) throw err;
 
   var context = 3
-    , str = require('fs').readFileSync(filename, 'utf8')
     , lines = str.split('\n')
     , start = Math.max(lineno - context, 0)
     , end = Math.min(lines.length, lineno + context);
@@ -3891,19 +3890,43 @@ exports.rethrow = function rethrow(err, filename, lineno){
 
 })({});
 
-//>>excludeStart('excludeJade', pragmas.excludeJade)
+var fns = [];
+for(var fn in jade) {
+	if (jade[fn] && typeof(jade[fn]) === 'function') {
+		fns.push(fn + ":" + jade[fn]);
+	}
 }
-//>>excludeEnd('excludeJade')
+jadeDefinition = 'define("jade", {\n' + fns.join(',\n') + '});\n';
+
+//>>excludeStart('excludeJadeOnSave', pragmas.excludeJadeOnSave)
+}
+//>>excludeEnd('excludeJadeOnSave')
 
 define({
+	first: true,
     //>>excludeStart('excludeJade', pragmas.excludeJade)
     get: function() {
       return Jade;
     },
     write: function (pluginName, name, write) {
+    	//>>excludeStart('excludeJadeOnSave', pragmas.excludeJadeOnSave)
+	    if (false) {
+	    //>>excludeEnd('excludeJadeOnSave')
+	    	if (this.first) {
+	    		write(jadeDefinition);
+		    	this.first=false;
+	    	}
+    	//>>excludeStart('excludeJadeOnSave', pragmas.excludeJadeOnSave)
+	    }
+	    //>>excludeEnd('excludeJadeOnSave')
         if (name in buildMap) {
-            var text = buildMap[name];
-            write("define('"+pluginName+"!"+name+"', ['jade'], function(jade){ return " + text + "});\n");
+            var text = buildMap[name],
+            	defineName = '';
+            //>>excludeStart('excludeJadeOnSave', pragmas.excludeJadeOnSave)
+            defineName += pluginName + "!";
+            //>>excludeEnd('excludeJadeOnSave')
+            defineName += name;
+            write("define('"+defineName+"', ['jade'], function(jade){ return " + text + "});\n");
         }
     },
     //>>excludeEnd('excludeJade')
@@ -3912,15 +3935,15 @@ define({
       //>>excludeStart('excludeJade', pragmas.excludeJade)
       fetchText(parentRequire.toUrl(name+'.jade'), function(text) {
         var f = Jade.compile(text);
-        
+
         if (config.isBuild) {
             buildMap[name] = Jade.compile(text, {compileDebug: false, client: true});
         }
-        
+
         load(f);
       });
       //>>excludeEnd('excludeJade')
-              
+
     }
 });
 //>>excludeStart('excludeJade', pragmas.excludeJade)
