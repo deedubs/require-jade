@@ -55,7 +55,6 @@ require.relative = function (parent) {
     };
   };
 
-
 require.register("compiler.js", function(module, exports, require){
 
 /*!
@@ -3375,6 +3374,49 @@ Parser.prototype = {
   }
 };
 
+Parser.prototype.parseExtends = function() {
+  var path = this.expect('extends').val.trim()
+
+  // no extension
+  if (path.indexOf('.') === -1) {
+    path += '.jade';
+  }
+
+  var str = fetchText(process.baseUrl + path);
+  
+  parser = new Parser(str, path, this.options);
+
+  parser.blocks = this.blocks;
+  parser.contexts = this.contexts;
+  this.extending = parser;
+
+  return new nodes.Literal('');
+};
+
+Parser.prototype.parseInclude = function() {
+  var path = this.expect('include').val.trim();
+
+  // no extension
+  if (path.indexOf('.') === -1) {
+    path += '.jade';
+  }
+
+  var str = fetchText(process.baseUrl + path);
+  
+  parser = new Parser(str, path, this.options);
+
+  this.context(parser);
+  var ast = parser.parse();
+  this.context();
+  ast.filename = path;
+
+  if ('indent' == this.peek().type) {
+    ast.includeBlock().push(this.block());
+  }
+
+  return ast;
+}
+
 }); // module: parser.js
 
 require.register("runtime.js", function(module, exports, require){
@@ -3700,9 +3742,9 @@ if (typeof window !== "undefined" && window.navigator && window.document) {
     
     //Using special require.nodeRequire, something added by r.js.
     fs = require.nodeRequire('fs');
-    fetchText = function (path, callback) {
-        callback(fs.readFileSync(path, 'utf8'));
-    };
+    fetchText = function (path) {
+      return fs.readFileSync(path, 'utf8');
+    }
 }
 //>>excludeEnd('excludeJade')
 
@@ -3912,15 +3954,18 @@ define({
     version: '0.0.1',
     load: function (name, parentRequire, load, config) {
       //>>excludeStart('excludeJade', pragmas.excludeJade)
-      fetchText(parentRequire.toUrl(name+'.jade'), function(text) {
-        var f = Jade.compile(text);
+      
+      // This allows functions like `parseExtend` to always have access to baseUrl
+      process.baseUrl = parentRequire.toUrl('.').slice(0, -1);
+
+      var text = fetchText(parentRequire.toUrl(name+'.jade'));
+      var f = Jade.compile(text);
         
-        if (config.isBuild) {
-            buildMap[name] = Jade.compile(text, {compileDebug: false, client: true});
-        }
-        
-        load(f);
-      });
+      if (config.isBuild) {
+          buildMap[name] = Jade.compile(text, {compileDebug: false, client: true});
+      }
+      
+      load(f);
       //>>excludeEnd('excludeJade')
               
     }
