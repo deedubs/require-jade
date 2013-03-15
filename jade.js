@@ -3895,7 +3895,7 @@ define('jade', jade);
 
 //>>excludeStart('excludeJade', pragmas.excludeJade)
 } else {
-	var jade = {};
+    var jade = {};
 }
 //>>excludeEnd('excludeJade')
 
@@ -3910,10 +3910,10 @@ define({
             write("define('"+pluginName+"!"+name+"', ['jade'], function(jade){ return " + text + "});\n");
         }
     },
-	attrs: jade.attrs,
-	escape: jade.escape,
-	rethrow: jade.rethrow,
-	merge: jade.merge,
+    attrs: jade.attrs,
+    escape: jade.escape,
+    rethrow: jade.rethrow,
+    merge: jade.merge,
     //>>excludeEnd('excludeJade')
     version: '0.0.1',
     load: function (name, parentRequire, load, config) {
