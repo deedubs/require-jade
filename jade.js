@@ -3707,11 +3707,6 @@ if (typeof window !== "undefined" && window.navigator && window.document) {
 //>>excludeEnd('excludeJade')
 
 
-//>>excludeStart('excludeJade', pragmas.excludeJade)
-if(false) {
-//>>excludeEnd('excludeJade')
-
-
 var jade = (function(exports){
 /*!
  * Jade - runtime
@@ -3891,14 +3886,6 @@ exports.rethrow = function rethrow(err, filename, lineno){
 
 })({});
 
-define('jade', jade);
-
-//>>excludeStart('excludeJade', pragmas.excludeJade)
-} else {
-    var jade = {};
-}
-//>>excludeEnd('excludeJade')
-
 define({
     //>>excludeStart('excludeJade', pragmas.excludeJade)
     get: function() {
@@ -3910,12 +3897,12 @@ define({
             write("define('"+pluginName+"!"+name+"', ['jade'], function(jade){ return " + text + "});\n");
         }
     },
+    //>>excludeEnd('excludeJade')
+    version: '0.0.1',
     attrs: jade.attrs,
     escape: jade.escape,
     rethrow: jade.rethrow,
     merge: jade.merge,
-    //>>excludeEnd('excludeJade')
-    version: '0.0.1',
     load: function (name, parentRequire, load, config) {
       //>>excludeStart('excludeJade', pragmas.excludeJade)
       fetchText(parentRequire.toUrl(name+'.jade'), function(text) {
