@@ -1032,9 +1032,7 @@ exports.compile = function(str, options){
 
   if (client) {
     fn = 'attrs = attrs || jade.attrs; escape = escape || jade.escape; rethrow = rethrow || jade.rethrow; merge = merge || jade.merge;\n' + fn;
-    //>>excludeStart('excludeJade', pragmas.excludeJade)
     fn = 'jade = jade.get().runtime;' + fn;
-    //>>excludeEnd('excludeJade')
   }
 
   fn = new Function('locals, attrs, escape, rethrow, merge', fn);
@@ -3832,7 +3830,7 @@ require.register("path.js", function(module, exports, require){
   require.register("fs.js", function(module, exports, require){
     exports.readFileSync = function(fileName, mode) {
       var xhr = getXhr();
-      xhr.open("GET",'/' + fileName,false);
+      xhr.open("GET",fileName,false);
       xhr.send();
       return xhr.response;
     };
