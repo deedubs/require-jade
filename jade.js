@@ -1032,6 +1032,9 @@ exports.compile = function(str, options){
 
   if (client) {
     fn = 'attrs = attrs || jade.attrs; escape = escape || jade.escape; rethrow = rethrow || jade.rethrow; merge = merge || jade.merge;\n' + fn;
+    //>>excludeStart('excludeJade', pragmas.excludeJade)
+    fn = 'jade = jade.get().runtime;' + fn;
+    //>>excludeEnd('excludeJade')
   }
 
   fn = new Function('locals, attrs, escape, rethrow, merge', fn);
@@ -3143,10 +3146,10 @@ Parser.prototype = {
         , str = fs.readFileSync(path, 'utf8');
       return new nodes.Literal(str);
     }
-
-    var path = join(dir, path)
-      , str = fs.readFileSync(path, 'utf8')
+    var path = join(dir, path);
+    var str = fs.readFileSync(path, 'utf8')
      , parser = new Parser(str, path, this.options);
+
     parser.blocks = utils.merge({}, this.blocks);
     parser.mixins = this.mixins;
 
@@ -3829,7 +3832,7 @@ require.register("path.js", function(module, exports, require){
   require.register("fs.js", function(module, exports, require){
     exports.readFileSync = function(fileName, mode) {
       var xhr = getXhr();
-      xhr.open("GET",fileName,false);
+      xhr.open("GET",'/' + fileName,false);
       xhr.send();
       return xhr.response;
     };
@@ -3891,9 +3894,6 @@ if (typeof window !== "undefined" && window.navigator && window.document) {
            process.versions &&
            !!process.versions.node) {
              
-    
-    
-    
     //Using special require.nodeRequire, something added by r.js.
     fs = require.nodeRequire('fs');
     fetchText = function (path, callback) {
@@ -4088,10 +4088,10 @@ exports.rethrow = function rethrow(err, filename, lineno){
 })({});
 
 define('jade', jade);
-
 //>>excludeStart('excludeJade', pragmas.excludeJade)
 }
 //>>excludeEnd('excludeJade')
+
 
 define({
     //>>excludeStart('excludeJade', pragmas.excludeJade)
@@ -4109,10 +4109,10 @@ define({
     load: function (name, parentRequire, load, config) {
       //>>excludeStart('excludeJade', pragmas.excludeJade)
       fetchText(parentRequire.toUrl(name+'.jade'), function(text) {
-        var f = Jade.compile(text, {filename: name});
+        var f = Jade.compile(text, {filename: parentRequire.toUrl(name+'.jade')});
         
         if (config.isBuild) {
-            buildMap[name] = Jade.compile(text, {compileDebug: false, client: true, filename: name});
+            buildMap[name] = Jade.compile(text, {compileDebug: false, client: true, filename: parentRequire.toUrl(name+'.jade')});
         }
         
         load(f);
