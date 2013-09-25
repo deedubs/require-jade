@@ -6,7 +6,7 @@ var getXhr, Jade,
         throw new Error('Environment unsupported.');
     },
     buildMap = [];
-    
+
 (function() {
 
 // CommonJS require()
@@ -40,11 +40,11 @@ require.register = function (path, fn){
 require.relative = function (parent) {
     return function(p){
       if ('.' != p.charAt(0)) return require(p);
-      
+
       var path = parent.split('/')
         , segs = p.split('/');
       path.pop();
-      
+
       for (var i = 0; i < segs.length; i++) {
         var seg = segs[i];
         if ('..' == seg) path.pop();
@@ -56,7 +56,232 @@ require.relative = function (parent) {
   };
 
 
+require.register('character-parser', function(module, exports, require) {
+
+exports = (module.exports = parse);
+exports.parse = parse;
+function parse(src, state, options) {
+  options = options || {};
+  state = state || exports.defaultState();
+  var start = options.start || 0;
+  var end = options.end || src.length;
+  var index = start;
+  while (index < end) {
+    if (state.roundDepth < 0 || state.curlyDepth < 0 || state.squareDepth < 0) {
+      throw new SyntaxError('Mismatched Bracket: ' + src[index - 1]);
+    }
+    exports.parseChar(src[index++], state);
+  }
+  return state;
+}
+
+exports.parseMax = parseMax;
+function parseMax(src, options) {
+  options = options || {};
+  var start = options.start || 0;
+  var index = start;
+  var state = exports.defaultState();
+  while (state.roundDepth >= 0 && state.curlyDepth >= 0 && state.squareDepth >= 0) {
+    if (index >= src.length) {
+      throw new Error('The end of the string was reached with no closing bracket found.');
+    }
+    exports.parseChar(src[index++], state);
+  }
+  var end = index - 1;
+  return {
+    start: start,
+    end: end,
+    src: src.substring(start, end)
+  };
+}
+
+exports.parseUntil = parseUntil;
+function parseUntil(src, delimiter, options) {
+  options = options || {};
+  var includeLineComment = options.includeLineComment || false;
+  var start = options.start || 0;
+  var index = start;
+  var state = exports.defaultState();
+  while (state.isString() || state.regexp || state.blockComment ||
+         (!includeLineComment && state.lineComment) || !startsWith(src, delimiter, index)) {
+    exports.parseChar(src[index++], state);
+  }
+  var end = index;
+  return {
+    start: start,
+    end: end,
+    src: src.substring(start, end)
+  };
+}
+
+
+exports.parseChar = parseChar;
+function parseChar(character, state) {
+  if (character.length !== 1) throw new Error('Character must be a string of length 1');
+  state = state || exports.defaultState();
+  var wasComment = state.blockComment || state.lineComment;
+  var lastChar = state.history ? state.history[0] : '';
+  if (state.lineComment) {
+    if (character === '\n') {
+      state.lineComment = false;
+    }
+  } else if (state.blockComment) {
+    if (state.lastChar === '*' && character === '/') {
+      state.blockComment = false;
+    }
+  } else if (state.singleQuote) {
+    if (character === '\'' && !state.escaped) {
+      state.singleQuote = false;
+    } else if (character === '\\' && !state.escaped) {
+      state.escaped = true;
+    } else {
+      state.escaped = false;
+    }
+  } else if (state.doubleQuote) {
+    if (character === '"' && !state.escaped) {
+      state.doubleQuote = false;
+    } else if (character === '\\' && !state.escaped) {
+      state.escaped = true;
+    } else {
+      state.escaped = false;
+    }
+  } else if (state.regexp) {
+    if (character === '/' && !state.escaped) {
+      state.regexp = false;
+    } else if (character === '\\' && !state.escaped) {
+      state.escaped = true;
+    } else {
+      state.escaped = false;
+    }
+  } else if (lastChar === '/' && character === '/') {
+    state.history = state.history.substr(1);
+    state.lineComment = true;
+  } else if (lastChar === '/' && character === '*') {
+    state.history = state.history.substr(1);
+    state.blockComment = true;
+  } else if (character === '/' && isRegexp(state.history)) {
+    state.regexp = true;
+  } else if (character === '\'') {
+    state.singleQuote = true;
+  } else if (character === '"') {
+    state.doubleQuote = true;
+  } else if (character === '(') {
+    state.roundDepth++;
+  } else if (character === ')') {
+    state.roundDepth--;
+  } else if (character === '{') {
+    state.curlyDepth++;
+  } else if (character === '}') {
+    state.curlyDepth--;
+  } else if (character === '[') {
+    state.squareDepth++;
+  } else if (character === ']') {
+    state.squareDepth--;
+  }
+  if (!state.blockComment && !state.lineComment && !wasComment) state.history = character + state.history;
+  return state;
+}
+
+exports.defaultState = function () { return new State() };
+function State() {
+  this.lineComment = false;
+  this.blockComment = false;
+
+  this.singleQuote = false;
+  this.doubleQuote = false;
+  this.regexp = false;
+  this.escaped = false;
+
+  this.roundDepth = 0;
+  this.curlyDepth = 0;
+  this.squareDepth = 0;
+
+  this.history = ''
+}
+State.prototype.isString = function () {
+  return this.singleQuote || this.doubleQuote;
+}
+State.prototype.isComment = function () {
+  return this.lineComment || this.blockComment;
+}
+State.prototype.isNesting = function () {
+  return this.isString() || this.isComment() || this.regexp || this.roundDepth > 0 || this.curlyDepth > 0 || this.squareDepth > 0
+}
+
+function startsWith(str, start, i) {
+  return str.substr(i || 0, start.length) === start;
+}
+
+exports.isPunctuator = isPunctuator
+function isPunctuator(c) {
+  var code = c.charCodeAt(0)
+
+  switch (code) {
+    case 46:   // . dot
+    case 40:   // ( open bracket
+    case 41:   // ) close bracket
+    case 59:   // ; semicolon
+    case 44:   // , comma
+    case 123:  // { open curly brace
+    case 125:  // } close curly brace
+    case 91:   // [
+    case 93:   // ]
+    case 58:   // :
+    case 63:   // ?
+    case 126:  // ~
+    case 37:   // %
+    case 38:   // &
+    case 42:   // *:
+    case 43:   // +
+    case 45:   // -
+    case 47:   // /
+    case 60:   // <
+    case 62:   // >
+    case 94:   // ^
+    case 124:  // |
+    case 33:   // !
+    case 61:   // =
+      return true;
+    default:
+      return false;
+  }
+}
+exports.isKeyword = isKeyword
+function isKeyword(id) {
+  return (id === 'if') || (id === 'in') || (id === 'do') || (id === 'var') || (id === 'for') || (id === 'new') ||
+         (id === 'try') || (id === 'let') || (id === 'this') || (id === 'else') || (id === 'case') ||
+         (id === 'void') || (id === 'with') || (id === 'enum') || (id === 'while') || (id === 'break') || (id === 'catch') ||
+         (id === 'throw') || (id === 'const') || (id === 'yield') || (id === 'class') || (id === 'super') ||
+         (id === 'return') || (id === 'typeof') || (id === 'delete') || (id === 'switch') || (id === 'export') ||
+         (id === 'import') || (id === 'default') || (id === 'finally') || (id === 'extends') || (id === 'function') ||
+         (id === 'continue') || (id === 'debugger') || (id === 'package') || (id === 'private') || (id === 'interface') ||
+         (id === 'instanceof') || (id === 'implements') || (id === 'protected') || (id === 'public') || (id === 'static') ||
+         (id === 'yield') || (id === 'let');
+}
+
+function isRegexp(history) {
+  //could be start of regexp or divide sign
+
+  history = history.replace(/^\s*/, '');
+
+  //unless its an `if`, `while`, `for` or `with` it's a divide, so we assume it's a divide
+  if (history[0] === ')') return false;
+  //unless it's a function expression, it's a regexp, so we assume it's a regexp
+  if (history[0] === '}') return true;
+  //any punctuation means it's a regexp
+  if (isPunctuator(history[0])) return true;
+  //if the last thing was a keyword then it must be a regexp (e.g. `typeof /foo/`)
+  if (/^\w+\b/.test(history) && isKeyword(/^\w+\b/.exec(history)[0].split('').reverse().join(''))) return true;
+
+  return false;
+}
+
+return exports;
+});
+
+
 require.register("compiler.js", function(module, exports, require){
+
 
 /*!
  * Jade - Compiler
@@ -73,27 +298,30 @@ var nodes = require('./nodes')
   , doctypes = require('./doctypes')
   , selfClosing = require('./self-closing')
   , runtime = require('./runtime')
-  , utils = require('./utils');
+  , utils = require('./utils')
+  , parseJSExpression = require('character-parser').parseMax
 
-
- if (!Object.keys) {
-   Object.keys = function(obj){
-     var arr = [];
-     for (var key in obj) {
-       if (obj.hasOwnProperty(key)) {
-         arr.push(key);
-       }
-     }
-     return arr;
-   }
- }
-
- if (!String.prototype.trimLeft) {
-   String.prototype.trimLeft = function(){
-     return this.replace(/^\s+/, '');
-   }
- }
-
+// if browser
+//
+// if (!Object.keys) {
+//   Object.keys = function(obj){
+//     var arr = [];
+//     for (var key in obj) {
+//       if (obj.hasOwnProperty(key)) {
+//         arr.push(key);
+//       }
+//     }
+//     return arr;
+//   }
+// }
+//
+// if (!String.prototype.trimLeft) {
+//   String.prototype.trimLeft = function(){
+//     return this.replace(/^\s+/, '');
+//   }
+// }
+//
+// end
 
 
 /**
@@ -129,8 +357,8 @@ Compiler.prototype = {
    */
 
   compile: function(){
-    this.buf = ['var interp;'];
-    if (this.pp) this.buf.push("var __indent = [];");
+    this.buf = [];
+    if (this.pp) this.buf.push("jade.indent = [];");
     this.lastBufferedIdx = -1;
     this.visit(this.node);
     return this.buf.join('\n');
@@ -153,22 +381,77 @@ Compiler.prototype = {
   },
 
   /**
-   * Buffer the given `str` optionally escaped.
+   * Buffer the given `str` exactly as is or with interpolation
    *
    * @param {String} str
-   * @param {Boolean} esc
+   * @param {Boolean} interpolate
    * @api public
    */
 
-  buffer: function(str, esc){
-    if (esc) str = utils.escape(str);
+  buffer: function (str, interpolate) {
+    var self = this;
+    if (interpolate) {
+      var match = /(\\)?([#!]){((?:.|\n)*)$/.exec(str);
+      if (match) {
+        this.buffer(str.substr(0, match.index), false);
+        if (match[1]) { // escape
+          this.buffer(match[2] + '{', false);
+          this.buffer(match[3], true);
+          return;
+        } else {
+          try {
+            var rest = match[3];
+            var range = parseJSExpression(rest);
+            var code = ('!' == match[2] ? '' : 'jade.escape') + "((jade.interp = " + range.src + ") == null ? '' : jade.interp)";
+          } catch (ex) {
+            throw ex;
+            //didn't match, just as if escaped
+            this.buffer(match[2] + '{', false);
+            this.buffer(match[3], true);
+            return;
+          }
+          this.bufferExpression(code);
+          this.buffer(rest.substr(range.end + 1), true);
+          return;
+        }
+      }
+    }
+
+    str = JSON.stringify(str);
+    str = str.substr(1, str.length - 2);
 
     if (this.lastBufferedIdx == this.buf.length) {
+      if (this.lastBufferedType === 'code') this.lastBuffered += ' + "';
+      this.lastBufferedType = 'text';
       this.lastBuffered += str;
-      this.buf[this.lastBufferedIdx - 1] = "buf.push('" + this.lastBuffered + "');"
+      this.buf[this.lastBufferedIdx - 1] = 'buf.push(' + this.bufferStartChar + this.lastBuffered + '");'
     } else {
-      this.buf.push("buf.push('" + str + "');");
+      this.buf.push('buf.push("' + str + '");');
+      this.lastBufferedType = 'text';
+      this.bufferStartChar = '"';
       this.lastBuffered = str;
+      this.lastBufferedIdx = this.buf.length;
+    }
+  },
+
+  /**
+   * Buffer the given `src` so it is evaluated at run time
+   *
+   * @param {String} src
+   * @api public
+   */
+
+  bufferExpression: function (src) {
+    if (this.lastBufferedIdx == this.buf.length) {
+      if (this.lastBufferedType === 'text') this.lastBuffered += '"';
+      this.lastBufferedType = 'code';
+      this.lastBuffered += ' + (' + src + ')';
+      this.buf[this.lastBufferedIdx - 1] = 'buf.push(' + this.bufferStartChar + this.lastBuffered + ');'
+    } else {
+      this.buf.push('buf.push(' + src + ');');
+      this.lastBufferedType = 'code';
+      this.bufferStartChar = '';
+      this.lastBuffered = '(' + src + ')';
       this.lastBufferedIdx = this.buf.length;
     }
   },
@@ -184,10 +467,10 @@ Compiler.prototype = {
 
   prettyIndent: function(offset, newline){
     offset = offset || 0;
-    newline = newline ? '\\n' : '';
+    newline = newline ? '\n' : '';
     this.buffer(newline + Array(this.indents + offset).join('  '));
     if (this.parentIndents)
-      this.buf.push("buf.push.apply(buf, __indent);");
+      this.buf.push("buf.push.apply(buf, jade.indent);");
   },
 
   /**
@@ -201,10 +484,10 @@ Compiler.prototype = {
     var debug = this.debug;
 
     if (debug) {
-      this.buf.push('__jade.unshift({ lineno: ' + node.line
+      this.buf.push('jade.debug.unshift({ lineno: ' + node.line
         + ', filename: ' + (node.filename
           ? JSON.stringify(node.filename)
-          : '__jade[0].filename')
+          : 'jade.debug[0].filename')
         + ' });');
     }
 
@@ -217,7 +500,7 @@ Compiler.prototype = {
 
     this.visitNode(node);
 
-    if (debug) this.buf.push('__jade.shift();');
+    if (debug) this.buf.push('jade.debug.shift();');
   },
 
   /**
@@ -274,8 +557,7 @@ Compiler.prototype = {
    */
 
   visitLiteral: function(node){
-    var str = node.str.replace(/\n/g, '\\\\n');
-    this.buffer(str);
+    this.buffer(node.str);
   },
 
   /**
@@ -292,9 +574,9 @@ Compiler.prototype = {
 
     // Block keyword has a special meaning in mixins
     if (this.parentIndents && block.mode) {
-      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
+      if (pp) this.buf.push("jade.indent.push('" + Array(this.indents + 1).join('  ') + "');")
       this.buf.push('block && block();');
-      if (pp) this.buf.push("__indent.pop();")
+      if (pp) this.buf.push("jade.indent.pop();")
       return;
     }
 
@@ -310,7 +592,7 @@ Compiler.prototype = {
       this.visit(block.nodes[i]);
       // Multiple text nodes are separated by newlines
       if (block.nodes[i+1] && block.nodes[i].isText && block.nodes[i+1].isText)
-        this.buffer('\\n');
+        this.buffer('\n');
     }
   },
 
@@ -348,7 +630,7 @@ Compiler.prototype = {
       , pp = this.pp;
 
     if (mixin.call) {
-      if (pp) this.buf.push("__indent.push('" + Array(this.indents + 1).join('  ') + "');")
+      if (pp) this.buf.push("jade.indent.push('" + Array(this.indents + 1).join('  ') + "');")
       if (block || attrs.length) {
 
         this.buf.push(name + '.call({');
@@ -374,8 +656,8 @@ Compiler.prototype = {
         if (attrs.length) {
           var val = this.attrs(attrs);
           if (val.inherits) {
-            this.buf.push('attributes: merge({' + val.buf
-                + '}, attributes), escaped: merge(' + val.escaped + ', escaped, true)');
+            this.buf.push('attributes: jade.merge({' + val.buf
+                + '}, attributes), escaped: jade.merge(' + val.escaped + ', escaped, true)');
           } else {
             this.buf.push('attributes: {' + val.buf + '}, escaped: ' + val.escaped);
           }
@@ -390,7 +672,7 @@ Compiler.prototype = {
       } else {
         this.buf.push(name + '(' + args + ');');
       }
-      if (pp) this.buf.push("__indent.pop();")
+      if (pp) this.buf.push("jade.indent.pop();")
     } else {
       this.buf.push('var ' + name + ' = function(' + args + '){');
       this.buf.push('var block = this.block, attributes = this.attributes || {}, escaped = this.escaped || {};');
@@ -412,9 +694,13 @@ Compiler.prototype = {
   visitTag: function(tag){
     this.indents++;
     var name = tag.name
-      , pp = this.pp;
+      , pp = this.pp
+      , self = this;
 
-    if (tag.buffer) name = "' + (" + name + ") + '";
+    function bufferName() {
+      if (tag.buffer) self.bufferExpression(name);
+      else self.buffer(name);
+    }
 
     if (!this.hasCompiledTag) {
       if (!this.hasCompiledDoctype && 'html' == name) {
@@ -428,7 +714,8 @@ Compiler.prototype = {
       this.prettyIndent(0, true);
 
     if ((~selfClosing.indexOf(name) || tag.selfClosing) && !this.xml) {
-      this.buffer('<' + name);
+      this.buffer('<');
+      bufferName();
       this.visitAttributes(tag.attrs);
       this.terse
         ? this.buffer('>')
@@ -436,11 +723,14 @@ Compiler.prototype = {
     } else {
       // Optimize attributes buffering
       if (tag.attrs.length) {
-        this.buffer('<' + name);
+        this.buffer('<');
+        bufferName();
         if (tag.attrs.length) this.visitAttributes(tag.attrs);
         this.buffer('>');
       } else {
-        this.buffer('<' + name + '>');
+        this.buffer('<');
+        bufferName();
+        this.buffer('>');
       }
       if (tag.code) this.visitCode(tag.code);
       this.escape = 'pre' == tag.name;
@@ -450,7 +740,9 @@ Compiler.prototype = {
       if (pp && !tag.isInline() && 'pre' != tag.name && !tag.canInline())
         this.prettyIndent(0, true);
 
-      this.buffer('</' + name + '>');
+      this.buffer('</');
+      bufferName();
+      this.buffer('>');
     }
     this.indents--;
   },
@@ -463,25 +755,12 @@ Compiler.prototype = {
    */
 
   visitFilter: function(filter){
-    var fn = filters[filter.name];
-
-    // unknown filter
-    if (!fn) {
-      if (filter.isASTFilter) {
-        throw new Error('unknown ast filter "' + filter.name + ':"');
-      } else {
-        throw new Error('unknown filter ":' + filter.name + '"');
-      }
-    }
-
-    if (filter.isASTFilter) {
-      this.buf.push(fn(filter.block, this, filter.attrs));
-    } else {
-      var text = filter.block.nodes.map(function(node){ return node.val }).join('\n');
-      filter.attrs = filter.attrs || {};
-      filter.attrs.filename = this.options.filename;
-      this.buffer(utils.text(fn(text, filter.attrs)));
-    }
+    var text = filter.block.nodes.map(
+      function(node){ return node.val; }
+    ).join('\n');
+    filter.attrs = filter.attrs || {};
+    filter.attrs.filename = this.options.filename;
+    this.buffer(filters(filter.name, text, filter.attrs), true);
   },
 
   /**
@@ -492,9 +771,7 @@ Compiler.prototype = {
    */
 
   visitText: function(text){
-    text = utils.text(text.val.replace(/\\/g, '\\\\'));
-    if (this.escape) text = escape(text);
-    this.buffer(text);
+    this.buffer(text.val, true);
   },
 
   /**
@@ -507,7 +784,7 @@ Compiler.prototype = {
   visitComment: function(comment){
     if (!comment.buffer) return;
     if (this.pp) this.prettyIndent(1, true);
-    this.buffer('<!--' + utils.escape(comment.val) + '-->');
+    this.buffer('<!--' + comment.val + '-->');
   },
 
   /**
@@ -547,10 +824,9 @@ Compiler.prototype = {
     // Buffer code
     if (code.buffer) {
       var val = code.val.trimLeft();
-      this.buf.push('var __val__ = ' + val);
-      val = 'null == __val__ ? "" : __val__';
-      if (code.escape) val = 'escape(' + val + ')';
-      this.buf.push("buf.push(" + val + ");");
+      val = 'null == (jade.interp = '+val+') ? "" : jade.interp';
+      if (code.escape) val = 'jade.escape(' + val + ')';
+      this.bufferExpression(val);
     } else {
       this.buf.push(code.val);
     }
@@ -574,15 +850,16 @@ Compiler.prototype = {
     this.buf.push(''
       + '// iterate ' + each.obj + '\n'
       + ';(function(){\n'
-      + '  if (\'number\' == typeof ' + each.obj + '.length) {\n');
+      + '  var $$obj = ' + each.obj + ';\n'
+      + '  if (\'number\' == typeof $$obj.length) {\n');
 
     if (each.alternative) {
-      this.buf.push('  if (' + each.obj + '.length) {');
+      this.buf.push('  if ($$obj.length) {');
     }
 
     this.buf.push(''
-      + '    for (var ' + each.key + ' = 0, $$l = ' + each.obj + '.length; ' + each.key + ' < $$l; ' + each.key + '++) {\n'
-      + '      var ' + each.val + ' = ' + each.obj + '[' + each.key + '];\n');
+      + '    for (var ' + each.key + ' = 0, $$l = $$obj.length; ' + each.key + ' < $$l; ' + each.key + '++) {\n'
+      + '      var ' + each.val + ' = $$obj[' + each.key + '];\n');
 
     this.visit(each.block);
 
@@ -596,15 +873,23 @@ Compiler.prototype = {
 
     this.buf.push(''
       + '  } else {\n'
-      + '    for (var ' + each.key + ' in ' + each.obj + ') {\n'
-       + '      if (' + each.obj + '.hasOwnProperty(' + each.key + ')){'
-      + '      var ' + each.val + ' = ' + each.obj + '[' + each.key + '];\n');
+      + '    var $$l = 0;\n'
+      + '    for (var ' + each.key + ' in $$obj) {\n'
+      + '      $$l++;'
+       + '      if ($$obj.hasOwnProperty(' + each.key + ')){'
+      + '      var ' + each.val + ' = $$obj[' + each.key + '];\n');
 
     this.visit(each.block);
 
-     this.buf.push('      }\n');
+    this.buf.push('      }\n');
 
-    this.buf.push('   }\n  }\n}).call(this);\n');
+    this.buf.push('    }\n');
+    if (each.alternative) {
+      this.buf.push('    if ($$l === 0) {');
+      this.visit(each.alternative);
+      this.buf.push('    }');
+    }
+    this.buf.push('  }\n}).call(this);\n');
   },
 
   /**
@@ -617,13 +902,13 @@ Compiler.prototype = {
   visitAttributes: function(attrs){
     var val = this.attrs(attrs);
     if (val.inherits) {
-      this.buf.push("buf.push(attrs(merge({ " + val.buf +
-          " }, attributes), merge(" + val.escaped + ", escaped, true)));");
+      this.bufferExpression("jade.attrs(jade.merge({ " + val.buf +
+          " }, attributes), jade.merge(" + val.escaped + ", escaped, true))");
     } else if (val.constant) {
       eval('var buf={' + val.buf + '};');
-      this.buffer(runtime.attrs(buf, JSON.parse(val.escaped)), true);
+      this.buffer(runtime.attrs(buf, JSON.parse(val.escaped)));
     } else {
-      this.buf.push("buf.push(attrs({ " + val.buf + " }, " + val.escaped + "));");
+      this.bufferExpression("jade.attrs({ " + val.buf + " }, " + val.escaped + ")");
     }
   },
 
@@ -653,11 +938,11 @@ Compiler.prototype = {
 
     if (classes.length) {
       classes = classes.join(" + ' ' + ");
-      buf.push("class: " + classes);
+      buf.push('"class": ' + classes);
     }
 
     return {
-      buf: buf.join(', ').replace('class:', '"class":'),
+      buf: buf.join(', '),
       escaped: JSON.stringify(escaped),
       inherits: inherits,
       constant: constant
@@ -688,22 +973,6 @@ function isConstant(val){
     return matches[1].split(',').every(isConstant);
 
   return false;
-}
-
-/**
- * Escape the given string of `html`.
- *
- * @param {String} html
- * @return {String}
- * @api private
- */
-
-function escape(html){
-  return String(html)
-    .replace(/&(?!\w+;)/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 }); // module: compiler.js
@@ -738,29 +1007,29 @@ require.register("filters.js", function(module, exports, require){
  */
 
 module.exports = {
-  
+
   /**
    * Wrap text with CDATA block.
    */
-  
+
   cdata: function(str){
     return '<![CDATA[\\n' + str + '\\n]]>';
   },
-  
+
   /**
    * Transform sass to css, wrapped in style tags.
    */
-  
+
   sass: function(str){
     str = str.replace(/\\n/g, '\n');
     var sass = require('sass').render(str).replace(/\n/g, '\\n');
-    return '<style type="text/css">' + sass + '</style>'; 
+    return '<style type="text/css">' + sass + '</style>';
   },
-  
+
   /**
    * Transform stylus to css, wrapped in style tags.
    */
-  
+
   stylus: function(str, options){
     var ret;
     str = str.replace(/\\n/g, '\n');
@@ -769,27 +1038,27 @@ module.exports = {
       if (err) throw err;
       ret = css.replace(/\n/g, '\\n');
     });
-    return '<style type="text/css">' + ret + '</style>'; 
+    return '<style type="text/css">' + ret + '</style>';
   },
-  
+
   /**
    * Transform less to css, wrapped in style tags.
    */
-  
+
   less: function(str){
     var ret;
     str = str.replace(/\\n/g, '\n');
     require('less').render(str, function(err, css){
       if (err) throw err;
-      ret = '<style type="text/css">' + css.replace(/\n/g, '\\n') + '</style>';  
+      ret = '<style type="text/css">' + css.replace(/\n/g, '\\n') + '</style>';
     });
     return ret;
   },
-  
+
   /**
    * Transform markdown to html.
    */
-  
+
   markdown: function(str){
     var md;
 
@@ -816,7 +1085,7 @@ module.exports = {
     str = str.replace(/\\n/g, '\n');
     return md.parse(str).replace(/\n/g, '\\n').replace(/'/g,'&#39;');
   },
-  
+
   /**
    * Transform coffeescript to javascript.
    */
@@ -881,7 +1150,7 @@ var Parser = require('./parser')
  * Library version.
  */
 
-exports.version = '0.27.6';
+exports.version = '0.30.0';
 
 /**
  * Expose self closing tags.
@@ -998,8 +1267,7 @@ function stripBOM(str){
  * Options:
  *
  *   - `compileDebug` when `false` debugging code is stripped from the compiled template
- *   - `client` when `true` the helper functions `escape()` etc will reference `jade.escape()`
- *      for use with the Jade client-side runtime.js
+ *   - `filename` used to improve errors when `compileDebug` is not `false`
  *
  * @param {String} str
  * @param {Options} options
@@ -1009,7 +1277,6 @@ function stripBOM(str){
 
 exports.compile = function(str, options){
   var options = options || {}
-    , client = options.client
     , filename = options.filename
       ? JSON.stringify(options.filename)
       : 'undefined'
@@ -1019,28 +1286,20 @@ exports.compile = function(str, options){
 
   if (options.compileDebug !== false) {
     fn = [
-        'var __jade = [{ lineno: 1, filename: ' + filename + ' }];'
+        'jade.debug = [{ lineno: 1, filename: ' + filename + ' }];'
       , 'try {'
       , parse(str, options)
       , '} catch (err) {'
-      , '  rethrow(err, __jade[0].filename, __jade[0].lineno);'
+      , '  jade.rethrow(err, jade.debug[0].filename, jade.debug[0].lineno);'
       , '}'
     ].join('\n');
   } else {
     fn = parse(str, options);
   }
 
-  if (client) {
-    fn = 'attrs = attrs || jade.attrs; escape = escape || jade.escape; rethrow = rethrow || jade.rethrow; merge = merge || jade.merge;\n' + fn;
-  }
-
-  fn = new Function('locals, attrs, escape, rethrow, merge', fn);
-
-  if (client) return fn;
-
-  return function(locals){
-    return fn(locals, runtime.attrs, runtime.escape, runtime.rethrow, runtime.merge);
-  };
+  if (options.client) return new Function('locals', fn)
+  fn = new Function('locals, jade', fn)
+  return function(locals){ return fn(locals, Object.create(runtime)) }
 };
 
 /**
@@ -1123,6 +1382,7 @@ require.register("lexer.js", function(module, exports, require){
  */
 
 var utils = require('./utils');
+var parseJSExpression = require('character-parser').parseMax;
 
 /**
  * Initialize `Lexer` with the given `str`.
@@ -1154,7 +1414,7 @@ var Lexer = module.exports = function Lexer(str, options) {
  */
 
 Lexer.prototype = {
-  
+
   /**
    * Construct a token with the given `type` and `val`.
    *
@@ -1163,7 +1423,7 @@ Lexer.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   tok: function(type, val){
     return {
         type: type
@@ -1171,18 +1431,18 @@ Lexer.prototype = {
       , val: val
     }
   },
-  
+
   /**
    * Consume the given `len` of input.
    *
    * @param {Number} len
    * @api private
    */
-  
+
   consume: function(len){
     this.input = this.input.substr(len);
   },
-  
+
   /**
    * Scan for `type` with the given `regexp`.
    *
@@ -1191,7 +1451,7 @@ Lexer.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   scan: function(regexp, type){
     var captures;
     if (captures = regexp.exec(this.input)) {
@@ -1199,18 +1459,18 @@ Lexer.prototype = {
       return this.tok(type, captures[1]);
     }
   },
-  
+
   /**
    * Defer the given `tok`.
    *
    * @param {Object} tok
    * @api private
    */
-  
+
   defer: function(tok){
     this.deferredTokens.push(tok);
   },
-  
+
   /**
    * Lookahead `n` tokens.
    *
@@ -1218,62 +1478,52 @@ Lexer.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   lookahead: function(n){
     var fetch = n - this.stash.length;
     while (fetch-- > 0) this.stash.push(this.next());
     return this.stash[--n];
   },
-  
+
   /**
-   * Return the indexOf `start` / `end` delimiters.
+   * Return the indexOf `(` or `{` or `[` / `)` or `}` or `]` delimiters.
    *
-   * @param {String} start
-   * @param {String} end
    * @return {Number}
    * @api private
    */
-  
-  indexOfDelimiters: function(start, end){
-    var str = this.input
-      , nstart = 0
-      , nend = 0
-      , pos = 0;
-    for (var i = 0, len = str.length; i < len; ++i) {
-      if (start == str.charAt(i)) {
-        ++nstart;
-      } else if (end == str.charAt(i)) {
-        if (++nend == nstart) {
-          pos = i;
-          break;
-        }
-      }
-    }
-    return pos;
+
+  bracketExpression: function(skip){
+    skip = skip || 0;
+    var start = this.input[skip];
+    if (start != '(' && start != '{' && start != '[') throw new Error('unrecognized start character');
+    var end = ({'(': ')', '{': '}', '[': ']'})[start];
+    var range = parseJSExpression(this.input, {start: skip + 1});
+    if (this.input[range.end] !== end) throw new Error('start character ' + start + ' does not match end character ' + this.input[range.end]);
+    return range;
   },
-  
+
   /**
    * Stashed token.
    */
-  
+
   stashed: function() {
     return this.stash.length
       && this.stash.shift();
   },
-  
+
   /**
    * Deferred token.
    */
-  
+
   deferred: function() {
-    return this.deferredTokens.length 
+    return this.deferredTokens.length
       && this.deferredTokens.shift();
   },
-  
+
   /**
    * end-of-source.
    */
-  
+
   eos: function() {
     if (this.input.length) return;
     if (this.indentStack.length) {
@@ -1287,11 +1537,12 @@ Lexer.prototype = {
   /**
    * Blank line.
    */
-  
+
   blank: function() {
     var captures;
     if (captures = /^\n *\n/.exec(this.input)) {
       this.consume(captures[0].length - 1);
+      ++this.lineno;
       if (this.pipeless) return this.tok('text', '');
       return this.next();
     }
@@ -1300,7 +1551,7 @@ Lexer.prototype = {
   /**
    * Comment.
    */
-  
+
   comment: function() {
     var captures;
     if (captures = /^ *\/\/(-)?([^\n]*)/.exec(this.input)) {
@@ -1316,17 +1567,23 @@ Lexer.prototype = {
    */
 
   interpolation: function() {
-    var captures;
-    if (captures = /^#\{(.*?)\}/.exec(this.input)) {
-      this.consume(captures[0].length);
-      return this.tok('interpolation', captures[1]);
+    if (/^#\{/.test(this.input)) {
+      var match;
+      try {
+        match = this.bracketExpression(1);
+      } catch (ex) {
+        return;//not an interpolation expression, just an unmatched open interpolation
+      }
+
+      this.consume(match.end + 1);
+      return this.tok('interpolation', match.src);
     }
   },
 
   /**
    * Tag.
    */
-  
+
   tag: function() {
     var captures;
     if (captures = /^(\w[-:\w]*)(\/?)/.exec(this.input)) {
@@ -1344,19 +1601,19 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Filter.
    */
-  
+
   filter: function() {
     return this.scan(/^:(\w+)/, 'filter');
   },
-  
+
   /**
    * Doctype.
    */
-  
+
   doctype: function() {
     return this.scan(/^(?:!!!|doctype) *([^\n]+)?/, 'doctype');
   },
@@ -1364,23 +1621,23 @@ Lexer.prototype = {
   /**
    * Id.
    */
-  
+
   id: function() {
     return this.scan(/^#([\w-]+)/, 'id');
   },
-  
+
   /**
    * Class.
    */
-  
+
   className: function() {
     return this.scan(/^\.([\w-]+)/, 'class');
   },
-  
+
   /**
    * Text.
    */
-  
+
   text: function() {
     return this.scan(/^(?:\| ?| ?)?([^\n]+)/, 'text');
   },
@@ -1388,7 +1645,7 @@ Lexer.prototype = {
   /**
    * Extends.
    */
-  
+
   "extends": function() {
     return this.scan(/^extends? +([^\n]+)/, 'extends');
   },
@@ -1396,7 +1653,7 @@ Lexer.prototype = {
   /**
    * Block prepend.
    */
-  
+
   prepend: function() {
     var captures;
     if (captures = /^prepend +([^\n]+)/.exec(this.input)) {
@@ -1408,11 +1665,11 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Block append.
    */
-  
+
   append: function() {
     var captures;
     if (captures = /^append +([^\n]+)/.exec(this.input)) {
@@ -1428,7 +1685,7 @@ Lexer.prototype = {
   /**
    * Block.
    */
-  
+
   block: function() {
     var captures;
     if (captures = /^block\b *(?:(prepend|append) +)?([^\n]*)/.exec(this.input)) {
@@ -1445,7 +1702,7 @@ Lexer.prototype = {
   /**
    * Yield.
    */
-  
+
   yield: function() {
     return this.scan(/^yield */, 'yield');
   },
@@ -1453,7 +1710,7 @@ Lexer.prototype = {
   /**
    * Include.
    */
-  
+
   include: function() {
     return this.scan(/^include +([^\n]+)/, 'include');
   },
@@ -1461,7 +1718,7 @@ Lexer.prototype = {
   /**
    * Case.
    */
-  
+
   "case": function() {
     return this.scan(/^case +([^\n]+)/, 'case');
   },
@@ -1469,7 +1726,7 @@ Lexer.prototype = {
   /**
    * When.
    */
-  
+
   when: function() {
     return this.scan(/^when +([^:\n]+)/, 'when');
   },
@@ -1477,7 +1734,7 @@ Lexer.prototype = {
   /**
    * Default.
    */
-  
+
   "default": function() {
     return this.scan(/^default */, 'default');
   },
@@ -1485,7 +1742,7 @@ Lexer.prototype = {
   /**
    * Assignment.
    */
-  
+
   assignment: function() {
     var captures;
     if (captures = /^(\w+) += *([^;\n]+)( *;? *)/.exec(this.input)) {
@@ -1499,21 +1756,26 @@ Lexer.prototype = {
   /**
    * Call mixin.
    */
-  
+
   call: function(){
     var captures;
     if (captures = /^\+([-\w]+)/.exec(this.input)) {
       this.consume(captures[0].length);
       var tok = this.tok('call', captures[1]);
-      
+
       // Check for args (not attributes)
-      if (captures = /^ *\((.*?)\)/.exec(this.input)) {
-        if (!/^ *[-\w]+ *=/.test(captures[1])) {
-          this.consume(captures[0].length);
-          tok.args = captures[1];
+      if (captures = /^ *\(/.exec(this.input)) {
+        try {
+          var range = this.bracketExpression(captures[0].length - 1);
+          if (!/^ *[-\w]+ *=/.test(range.src)) { // not attributes
+            this.consume(range.end + 1);
+            tok.args = range.src;
+          }
+        } catch (ex) {
+          //not a bracket expcetion, just unmatched open parens
         }
       }
-      
+
       return tok;
     }
   },
@@ -1535,7 +1797,7 @@ Lexer.prototype = {
   /**
    * Conditional.
    */
-  
+
   conditional: function() {
     var captures;
     if (captures = /^(if|unless|else if|else)\b([^\n]*)/.exec(this.input)) {
@@ -1557,7 +1819,7 @@ Lexer.prototype = {
   /**
    * While.
    */
-  
+
   "while": function() {
     var captures;
     if (captures = /^while +([^\n]+)/.exec(this.input)) {
@@ -1569,7 +1831,7 @@ Lexer.prototype = {
   /**
    * Each.
    */
-  
+
   each: function() {
     var captures;
     if (captures = /^(?:- *)?(?:each|for) +(\w+)(?: *, *(\w+))? * in *([^\n]+)/.exec(this.input)) {
@@ -1580,14 +1842,14 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Code.
    */
-  
+
   code: function() {
     var captures;
-    if (captures = /^(!?=|-)([^\n]+)/.exec(this.input)) {
+    if (captures = /^(!?=|-)[ \t]*([^\n]+)/.exec(this.input)) {
       this.consume(captures[0].length);
       var flags = captures[1];
       captures[1] = captures[2];
@@ -1597,14 +1859,14 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Attributes.
    */
-  
+
   attrs: function() {
     if ('(' == this.input.charAt(0)) {
-      var index = this.indexOfDelimiters('(', ')')
+      var index = this.bracketExpression().end
         , str = this.input.substr(1, index-1)
         , tok = this.tok('attrs')
         , len = str.length
@@ -1622,10 +1884,15 @@ Lexer.prototype = {
       }
 
       function interpolate(attr) {
-        return attr.replace(/(\\)?#\{([^}]+)\}/g, function(_, escape, expr){
-          return escape
-             ? _
-             : quote + " + (" + expr + ") + " + quote;
+        return attr.replace(/(\\)?#\{(.+)/g, function(_, escape, expr){
+          if (escape) return _;
+          try {
+            var range = parseJSExpression(expr);
+            if (expr[range.end] !== '}') return _.substr(0, 2) + interpolate(_.substr(2));
+            return quote + " + (" + range.src + ") + " + quote + interpolate(expr.substr(range.end + 1));
+          } catch (ex) {
+            return _.substr(0, 2) + interpolate(_.substr(2));
+          }
         });
       }
 
@@ -1751,11 +2018,11 @@ Lexer.prototype = {
       return tok;
     }
   },
-  
+
   /**
    * Indent | Outdent | Newline.
    */
-  
+
   indent: function() {
     var captures, re;
 
@@ -1813,7 +2080,7 @@ Lexer.prototype = {
   },
 
   /**
-   * Pipe-less text consumed only when 
+   * Pipe-less text consumed only when
    * pipeless is true;
    */
 
@@ -1843,19 +2110,19 @@ Lexer.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   advance: function(){
     return this.stashed()
       || this.next();
   },
-  
+
   /**
    * Return the next token object.
    *
    * @return {Object}
    * @api private
    */
-  
+
   next: function() {
     return this.deferred()
       || this.blank()
@@ -1922,9 +2189,7 @@ var Attrs = module.exports = function Attrs() {
  * Inherit from `Node`.
  */
 
-Attrs.prototype = new Node;
-Attrs.prototype.constructor = Attrs;
-
+Attrs.prototype.__proto__ = Node.prototype;
 
 /**
  * Set attribute `name` to `val`, keep in mind these become
@@ -2009,8 +2274,7 @@ var BlockComment = module.exports = function BlockComment(val, block, buffer) {
  * Inherit from `Node`.
  */
 
-BlockComment.prototype = new Node;
-BlockComment.prototype.constructor = BlockComment;
+BlockComment.prototype.__proto__ = Node.prototype;
 
 }); // module: nodes/block-comment.js
 
@@ -2044,9 +2308,7 @@ var Block = module.exports = function Block(node){
  * Inherit from `Node`.
  */
 
-Block.prototype = new Node;
-Block.prototype.constructor = Block;
-
+Block.prototype.__proto__ = Node.prototype;
 
 /**
  * Block flag.
@@ -2172,9 +2434,7 @@ var Case = exports = module.exports = function Case(expr, block){
  * Inherit from `Node`.
  */
 
-Case.prototype = new Node;
-Case.prototype.constructor = Case;
-
+Case.prototype.__proto__ = Node.prototype;
 
 var When = exports.When = function When(expr, block){
   this.expr = expr;
@@ -2186,10 +2446,7 @@ var When = exports.When = function When(expr, block){
  * Inherit from `Node`.
  */
 
-When.prototype = new Node;
-When.prototype.constructor = When;
-
-
+When.prototype.__proto__ = Node.prototype;
 
 }); // module: nodes/case.js
 
@@ -2228,8 +2485,7 @@ var Code = module.exports = function Code(val, buffer, escape) {
  * Inherit from `Node`.
  */
 
-Code.prototype = new Node;
-Code.prototype.constructor = Code;
+Code.prototype.__proto__ = Node.prototype;
 
 }); // module: nodes/code.js
 
@@ -2265,8 +2521,7 @@ var Comment = module.exports = function Comment(val, buffer) {
  * Inherit from `Node`.
  */
 
-Comment.prototype = new Node;
-Comment.prototype.constructor = Comment;
+Comment.prototype.__proto__ = Node.prototype;
 
 }); // module: nodes/comment.js
 
@@ -2285,7 +2540,7 @@ require.register("nodes/doctype.js", function(module, exports, require){
 var Node = require('./node');
 
 /**
- * Initialize a `Doctype` with the given `val`. 
+ * Initialize a `Doctype` with the given `val`.
  *
  * @param {String} val
  * @api public
@@ -2299,8 +2554,7 @@ var Doctype = module.exports = function Doctype(val) {
  * Inherit from `Node`.
  */
 
-Doctype.prototype = new Node;
-Doctype.prototype.constructor = Doctype;
+Doctype.prototype.__proto__ = Node.prototype;
 
 }); // module: nodes/doctype.js
 
@@ -2339,8 +2593,7 @@ var Each = module.exports = function Each(obj, val, key, block) {
  * Inherit from `Node`.
  */
 
-Each.prototype = new Node;
-Each.prototype.constructor = Each;
+Each.prototype.__proto__ = Node.prototype;
 
 }); // module: nodes/each.js
 
@@ -2360,7 +2613,7 @@ var Node = require('./node')
   , Block = require('./block');
 
 /**
- * Initialize a `Filter` node with the given 
+ * Initialize a `Filter` node with the given
  * filter `name` and `block`.
  *
  * @param {String} name
@@ -2372,15 +2625,13 @@ var Filter = module.exports = function Filter(name, block, attrs) {
   this.name = name;
   this.block = block;
   this.attrs = attrs;
-  this.isASTFilter = !block.nodes.every(function(node){ return node.isText });
 };
 
 /**
  * Inherit from `Node`.
  */
 
-Filter.prototype = new Node;
-Filter.prototype.constructor = Filter;
+Filter.prototype.__proto__ = Node.prototype;
 
 }); // module: nodes/filter.js
 
@@ -2430,19 +2681,14 @@ var Node = require('./node');
  */
 
 var Literal = module.exports = function Literal(str) {
-  this.str = str
-    .replace(/\\/g, "\\\\")
-    .replace(/\n|\r\n/g, "\\n")
-    .replace(/'/g, "\\'");
+  this.str = str;
 };
 
 /**
  * Inherit from `Node`.
  */
 
-Literal.prototype = new Node;
-Literal.prototype.constructor = Literal;
-
+Literal.prototype.__proto__ = Node.prototype;
 
 }); // module: nodes/literal.js
 
@@ -2481,10 +2727,7 @@ var Mixin = module.exports = function Mixin(name, args, block, call){
  * Inherit from `Attrs`.
  */
 
-Mixin.prototype = new Attrs;
-Mixin.prototype.constructor = Mixin;
-
-
+Mixin.prototype.__proto__ = Attrs.prototype;
 
 }); // module: nodes/mixin.js
 
@@ -2551,9 +2794,7 @@ var Tag = module.exports = function Tag(name, block) {
  * Inherit from `Attrs`.
  */
 
-Tag.prototype = new Attrs;
-Tag.prototype.constructor = Tag;
-
+Tag.prototype.__proto__ = Attrs.prototype;
 
 /**
  * Clone this tag.
@@ -2596,13 +2837,13 @@ Tag.prototype.canInline = function(){
     if (node.isBlock) return node.nodes.every(isInline);
     return node.isText || (node.isInline && node.isInline());
   }
-  
+
   // Empty tag
   if (!nodes.length) return true;
-  
+
   // Text-only or inline-only tag
   if (1 == nodes.length) return isInline(nodes[0]);
-  
+
   // Multi-line inline-only tag
   if (this.block.nodes.every(isInline)) {
     for (var i = 1, len = nodes.length; i < len; ++i) {
@@ -2611,7 +2852,7 @@ Tag.prototype.canInline = function(){
     }
     return true;
   }
-  
+
   // Mixed tag
   return false;
 };
@@ -2647,9 +2888,7 @@ var Text = module.exports = function Text(line) {
  * Inherit from `Node`.
  */
 
-Text.prototype = new Node;
-Text.prototype.constructor = Text;
-
+Text.prototype.__proto__ = Node.prototype;
 
 /**
  * Flag as text.
@@ -2672,7 +2911,8 @@ require.register("parser.js", function(module, exports, require){
 
 var Lexer = require('./lexer')
   , nodes = require('./nodes')
-  , utils = require('./utils');
+  , utils = require('./utils')
+  , filters = require('./filters');
 
 /**
  * Initialize `Parser` with the given input `str` and `filename`.
@@ -2687,7 +2927,7 @@ var Parser = exports = module.exports = function Parser(str, filename, options){
   this.input = str;
   this.lexer = new Lexer(str, options);
   this.filename = filename;
-  this.blocks = {};
+  this.blocks = [];
   this.mixins = {};
   this.options = options;
   this.contexts = [this];
@@ -2739,29 +2979,29 @@ Parser.prototype = {
   skip: function(n){
     while (n--) this.advance();
   },
-  
+
   /**
    * Single token lookahead.
    *
    * @return {Object}
    * @api private
    */
-  
+
   peek: function() {
     return this.lookahead(1);
   },
-  
+
   /**
    * Return lexer lineno.
    *
    * @return {Number}
    * @api private
    */
-  
+
   line: function() {
     return this.lexer.lineno;
   },
-  
+
   /**
    * `n` token lookahead.
    *
@@ -2769,18 +3009,18 @@ Parser.prototype = {
    * @return {Object}
    * @api private
    */
-  
+
   lookahead: function(n){
     return this.lexer.lookahead(n);
   },
-  
+
   /**
    * Parse input returning a string of js for evaluation.
    *
    * @return {String}
    * @api public
    */
-  
+
   parse: function(){
     var block = new nodes.Block, parser;
     block.line = this.line();
@@ -2797,22 +3037,52 @@ Parser.prototype = {
       this.context(parser);
       var ast = parser.parse();
       this.context();
+
       // hoist mixins
       for (var name in this.mixins)
         ast.unshift(this.mixins[name]);
       return ast;
+    } else {
+      this.handleBlocks();
     }
 
     return block;
   },
-  
+
+  /**
+   * Handle blocks, appends and prepends. Must be called from must deep parser (which parses template that does not extends another template).
+   * @api private
+   */
+
+  handleBlocks: function() {
+    this.blocks.reverse();
+    var blocksHash = {}; // blockName: block object
+    for (var i in this.blocks) {
+      if (!( ({}).hasOwnProperty.call(blocksHash, [this.blocks[i].name]) )) { // just safe call to blocksHash.hasOwnProperty
+        blocksHash[this.blocks[i].name] = this.blocks[i];
+      } else {
+        switch (this.blocks[i].mode) {
+          case 'append':
+            blocksHash[this.blocks[i].name].nodes = blocksHash[this.blocks[i].name].nodes.concat(this.blocks[i].nodes);
+            break;
+          case 'prepend':
+            blocksHash[this.blocks[i].name].nodes = this.blocks[i].nodes.concat(blocksHash[this.blocks[i].name].nodes);
+            break;
+          default:
+            blocksHash[this.blocks[i].name].nodes = this.blocks[i].nodes;
+        }
+        this.blocks[i] = blocksHash[this.blocks[i].name];
+      }
+    }
+  },
+
   /**
    * Expect the given type, or throw an exception.
    *
    * @param {String} type
    * @api private
    */
-  
+
   expect: function(type){
     if (this.peek().type === type) {
       return this.advance();
@@ -2820,20 +3090,20 @@ Parser.prototype = {
       throw new Error('expected "' + type + '", but got "' + this.peek().type + '"');
     }
   },
-  
+
   /**
    * Accept the given `type`.
    *
    * @param {String} type
    * @api private
    */
-  
+
   accept: function(type){
     if (this.peek().type === type) {
       return this.advance();
     }
   },
-  
+
   /**
    *   tag
    * | doctype
@@ -2849,7 +3119,7 @@ Parser.prototype = {
    * | class
    * | interpolation
    */
-  
+
   parseExpr: function(){
     switch (this.peek().type) {
       case 'tag':
@@ -2899,14 +3169,14 @@ Parser.prototype = {
         throw new Error('unexpected token "' + this.peek().type + '"');
     }
   },
-  
+
   /**
    * Text
    */
-  
+
   parseText: function(){
-    var tok = this.expect('text')
-      , node = new nodes.Text(tok.val);
+    var tok = this.expect('text');
+    var node = new nodes.Text(tok.val);
     node.line = this.line();
     return node;
   },
@@ -2930,8 +3200,8 @@ Parser.prototype = {
    */
 
   parseCase: function(){
-    var val = this.expect('case').val
-      , node = new nodes.Case(val);
+    var val = this.expect('case').val;
+    var node = new nodes.Case(val);
     node.line = this.line();
     node.block = this.block();
     return node;
@@ -2945,7 +3215,7 @@ Parser.prototype = {
     var val = this.expect('when').val
     return new nodes.Case.When(val, this.parseBlockExpansion());
   },
-  
+
   /**
    * default
    */
@@ -2958,12 +3228,12 @@ Parser.prototype = {
   /**
    * code
    */
-  
+
   parseCode: function(){
-    var tok = this.expect('code')
-      , node = new nodes.Code(tok.val, tok.buffer, tok.escape)
-      , block
-      , i = 1;
+    var tok = this.expect('code');
+    var node = new nodes.Code(tok.val, tok.buffer, tok.escape);
+    var block;
+    var i = 1;
     node.line = this.line();
     while (this.lookahead(i) && 'newline' == this.lookahead(i).type) ++i;
     block = 'indent' == this.lookahead(i).type;
@@ -2973,14 +3243,14 @@ Parser.prototype = {
     }
     return node;
   },
-  
+
   /**
    * comment
    */
-  
+
   parseComment: function(){
-    var tok = this.expect('comment')
-      , node;
+    var tok = this.expect('comment');
+    var node;
 
     if ('indent' == this.peek().type) {
       node = new nodes.BlockComment(tok.val, this.block(), tok.buffer);
@@ -2991,26 +3261,26 @@ Parser.prototype = {
     node.line = this.line();
     return node;
   },
-  
+
   /**
    * doctype
    */
-  
+
   parseDoctype: function(){
-    var tok = this.expect('doctype')
-      , node = new nodes.Doctype(tok.val);
+    var tok = this.expect('doctype');
+    var node = new nodes.Doctype(tok.val);
     node.line = this.line();
     return node;
   },
-  
+
   /**
    * filter attrs? text-block
    */
-  
+
   parseFilter: function(){
-    var block
-      , tok = this.expect('filter')
-      , attrs = this.accept('attrs');
+    var tok = this.expect('filter');
+    var attrs = this.accept('attrs');
+    var block;
 
     this.lexer.pipeless = true;
     block = this.parseTextBlock();
@@ -3020,31 +3290,14 @@ Parser.prototype = {
     node.line = this.line();
     return node;
   },
-  
-  /**
-   * tag ':' attrs? block
-   */
-  
-  parseASTFilter: function(){
-    var block
-      , tok = this.expect('tag')
-      , attrs = this.accept('attrs');
 
-    this.expect(':');
-    block = this.block();
-
-    var node = new nodes.Filter(tok.val, block, attrs && attrs.attrs);
-    node.line = this.line();
-    return node;
-  },
-  
   /**
    * each block
    */
-  
+
   parseEach: function(){
-    var tok = this.expect('each')
-      , node = new nodes.Each(tok.code, tok.val, tok.key);
+    var tok = this.expect('each');
+    var node = new nodes.Each(tok.code, tok.val, tok.key);
     node.line = this.line();
     node.block = this.block();
     if (this.peek().type == 'code' && this.peek().val == 'else') {
@@ -3055,27 +3308,48 @@ Parser.prototype = {
   },
 
   /**
+   * Resolves a path relative to the template for use in
+   * includes and extends
+   *
+   * @param {String}  path
+   * @param {String}  purpose  Used in error messages.
+   * @return {String}
+   * @api private
+   */
+
+  resolvePath: function (path, purpose) {
+    var p = require('path');
+    var dirname = p.dirname;
+    var basename = p.basename;
+    var join = p.join;
+
+    if (path[0] !== '/' && !this.filename)
+      throw new Error('the "filename" option is required to use "' + purpose + '" with "relative" paths');
+
+    if (path[0] === '/' && !this.options.basedir)
+      throw new Error('the "basedir" option is required to use "' + purpose + '" with "absolute" paths');
+
+    path = join(path[0] === '/' ? this.options.basedir : dirname(this.filename), path);
+
+    if (basename(path).indexOf('.') === -1) path += '.jade';
+
+    return path;
+  },
+
+  /**
    * 'extends' name
    */
 
   parseExtends: function(){
-    var path = require('path')
-      , fs = require('fs')
-      , dirname = path.dirname
-      , basename = path.basename
-      , join = path.join;
+    var fs = require('fs');
 
-    if (!this.filename)
-      throw new Error('the "filename" option is required to extend templates');
+    var path = this.resolvePath(this.expect('extends').val.trim(), 'extends');
+    if ('.jade' != path.substr(-5)) path += '.jade';
 
-    var path = this.expect('extends').val.trim()
-      , dir = dirname(this.filename);
+    var str = fs.readFileSync(path, 'utf8');
+    var parser = new Parser(str, path, this.options);
 
-    var path = join(dir, path + '.jade')
-      , str = fs.readFileSync(path, 'utf8')
-      , parser = new Parser(str, path, this.options);
-
-    parser.blocks = this.blocks;
+    parser.blocks = this.blocks.reverse();
     parser.contexts = this.contexts;
     this.extending = parser;
 
@@ -3088,31 +3362,18 @@ Parser.prototype = {
    */
 
   parseBlock: function(){
-    var block = this.expect('block')
-      , mode = block.mode
-      , name = block.val.trim();
+    var block = this.expect('block');
+    var mode = block.mode;
+    var name = block.val.trim();
 
     block = 'indent' == this.peek().type
       ? this.block()
       : new nodes.Block(new nodes.Literal(''));
 
-    var prev = this.blocks[name];
-
-    if (prev) {
-      switch (prev.mode) {
-        case 'append':
-          block.nodes = block.nodes.concat(prev.nodes);
-          prev = block;
-          break;
-        case 'prepend':
-          block.nodes = prev.nodes.concat(block.nodes);
-          prev = block;
-          break;
-      }
-    }
-
     block.mode = mode;
-    return this.blocks[name] = prev || block;
+    block.name = name;
+    this.blocks.push(block);
+    return block;
   },
 
   /**
@@ -3120,34 +3381,22 @@ Parser.prototype = {
    */
 
   parseInclude: function(){
-    var path = require('path')
-      , fs = require('fs')
-      , dirname = path.dirname
-      , basename = path.basename
-      , join = path.join;
+    var fs = require('fs');
 
-    var path = this.expect('include').val.trim()
-      , dir = dirname(this.filename);
-
-    if (!this.filename)
-      throw new Error('the "filename" option is required to use includes');
-
-    // no extension
-    if (!~basename(path).indexOf('.')) {
-      path += '.jade';
-    }
+    var path = this.resolvePath(this.expect('include').val.trim(), 'include');
 
     // non-jade
     if ('.jade' != path.substr(-5)) {
-      var path = join(dir, path)
-        , str = fs.readFileSync(path, 'utf8');
+      var str = fs.readFileSync(path, 'utf8').replace(/\r/g, '');
+      var ext = require('path').extname(path).slice(1);
+      if (filters.exists(ext)) str = filters(ext, str, { filename: path });
       return new nodes.Literal(str);
     }
 
-    var path = join(dir, path)
-      , str = fs.readFileSync(path, 'utf8')
-     , parser = new Parser(str, path, this.options);
-    parser.blocks = utils.merge({}, this.blocks);
+    var str = fs.readFileSync(path, 'utf8');
+    var parser = new Parser(str, path, this.options);
+    parser.blocks = utils.merge([], this.blocks);
+
     parser.mixins = this.mixins;
 
     this.context(parser);
@@ -3167,10 +3416,10 @@ Parser.prototype = {
    */
 
   parseCall: function(){
-    var tok = this.expect('call')
-      , name = tok.val
-      , args = tok.args
-      , mixin = new nodes.Mixin(name, args, new nodes.Block, true);
+    var tok = this.expect('call');
+    var name = tok.val;
+    var args = tok.args;
+    var mixin = new nodes.Mixin(name, args, new nodes.Block, true);
 
     this.tag(mixin);
     if (mixin.block.isEmpty()) mixin.block = null;
@@ -3182,10 +3431,10 @@ Parser.prototype = {
    */
 
   parseMixin: function(){
-    var tok = this.expect('mixin')
-      , name = tok.val
-      , args = tok.args
-      , mixin;
+    var tok = this.expect('mixin');
+    var name = tok.val;
+    var args = tok.args;
+    var mixin;
 
     // definition
     if ('indent' == this.peek().type) {
@@ -3233,7 +3482,7 @@ Parser.prototype = {
   /**
    * indent expr* outdent
    */
-  
+
   block: function(){
     var block = new nodes.Block;
     block.line = this.line();
@@ -3252,7 +3501,7 @@ Parser.prototype = {
   /**
    * interpolation (attrs | class | id)* (text | code | ':')? newline* block?
    */
-  
+
   parseInterpolation: function(){
     var tok = this.advance();
     var tag = new nodes.Tag(tok.val);
@@ -3263,19 +3512,14 @@ Parser.prototype = {
   /**
    * tag (attrs | class | id)* (text | code | ':')? newline* block?
    */
-  
+
   parseTag: function(){
     // ast-filter look-ahead
     var i = 2;
     if ('attrs' == this.lookahead(i).type) ++i;
-    if (':' == this.lookahead(i).type) {
-      if ('indent' == this.lookahead(++i).type) {
-        return this.parseASTFilter();
-      }
-    }
 
-    var tok = this.advance()
-      , tag = new nodes.Tag(tok.val);
+    var tok = this.advance();
+    var tag = new nodes.Tag(tok.val);
 
     tag.selfClosing = tok.selfClosing;
 
@@ -3370,7 +3614,7 @@ Parser.prototype = {
         }
       }
     }
-    
+
     return tag;
   }
 };
@@ -3512,7 +3756,7 @@ exports.attrs = function attrs(obj, escaped){
 
 exports.escape = function escape(html){
   return String(html)
-    .replace(/&(?!(\w+|\#\d+);)/g, '&amp;')
+    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
@@ -3530,6 +3774,7 @@ exports.escape = function escape(html){
 
 exports.rethrow = function rethrow(err, filename, lineno){
   if (!filename) throw err;
+  if (typeof window != 'undefined') throw err;
 
   var context = 3
     , str = require('fs').readFileSync(filename, 'utf8')
@@ -3584,49 +3829,6 @@ require.register("utils.js", function(module, exports, require){
  * Copyright(c) 2010 TJ Holowaychuk <tj@vision-media.ca>
  * MIT Licensed
  */
-
-/**
- * Convert interpolation in the given string to JavaScript.
- *
- * @param {String} str
- * @return {String}
- * @api private
- */
-
-var interpolate = exports.interpolate = function(str){
-  return str.replace(/(\\)?([#!]){(.*?)}/g, function(str, escape, flag, code){
-    return escape
-      ? str.slice(1)
-      : "' + "
-        + ('!' == flag ? '' : 'escape')
-        + "((interp = " + code.replace(/\\'/g, "'")
-        + ") == null ? '' : interp) + '";
-  });
-};
-
-/**
- * Escape single quotes in `str`.
- *
- * @param {String} str
- * @return {String}
- * @api private
- */
-
-var escape = exports.escape = function(str) {
-  return str.replace(/'/g, "\\'");
-};
-
-/**
- * Interpolate, and escape the given `str`.
- *
- * @param {String} str
- * @return {String}
- * @api private
- */
-
-exports.text = function(str){
-  return interpolate(escape(str));
-};
 
 /**
  * Merge `b` into `a`.
@@ -3694,10 +3896,10 @@ if (typeof window !== "undefined" && window.navigator && window.document) {
 } else if (typeof process !== "undefined" &&
            process.versions &&
            !!process.versions.node) {
-             
-    
-    
-    
+
+
+
+
     //Using special require.nodeRequire, something added by r.js.
     fs = require.nodeRequire('fs');
     fetchText = function (path, callback) {
@@ -3766,9 +3968,7 @@ exports.merge = function merge(a, b) {
     bc = bc || [];
     if (!Array.isArray(ac)) ac = [ac];
     if (!Array.isArray(bc)) bc = [bc];
-    ac = ac.filter(nulls);
-    bc = bc.filter(nulls);
-    a['class'] = ac.concat(bc).join(' ');
+    a['class'] = ac.concat(bc).filter(nulls);
   }
 
   for (var key in b) {
@@ -3783,13 +3983,25 @@ exports.merge = function merge(a, b) {
 /**
  * Filter null `val`s.
  *
- * @param {Mixed} val
- * @return {Mixed}
+ * @param {*} val
+ * @return {Boolean}
  * @api private
  */
 
 function nulls(val) {
-  return val != null;
+  return val != null && val !== '';
+}
+
+/**
+ * join array as classes.
+ *
+ * @param {*} val
+ * @return {String}
+ * @api private
+ */
+
+function joinClasses(val) {
+  return Array.isArray(val) ? val.map(joinClasses).filter(nulls).join(' ') : val;
 }
 
 /**
@@ -3823,8 +4035,16 @@ exports.attrs = function attrs(obj, escaped){
         }
       } else if (0 == key.indexOf('data') && 'string' != typeof val) {
         buf.push(key + "='" + JSON.stringify(val) + "'");
-      } else if ('class' == key && Array.isArray(val)) {
-        buf.push(key + '="' + exports.escape(val.join(' ')) + '"');
+      } else if ('class' == key) {
+        if (escaped && escaped[key]){
+          if (val = exports.escape(joinClasses(val))) {
+            buf.push(key + '="' + val + '"');
+          }
+        } else {
+          if (val = joinClasses(val)) {
+            buf.push(key + '="' + val + '"');
+          }
+        }
       } else if (escaped && escaped[key]) {
         buf.push(key + '="' + exports.escape(val) + '"');
       } else {
@@ -3846,7 +4066,7 @@ exports.attrs = function attrs(obj, escaped){
 
 exports.escape = function escape(html){
   return String(html)
-    .replace(/&(?!(\w+|\#\d+);)/g, '&amp;')
+    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
@@ -3862,11 +4082,18 @@ exports.escape = function escape(html){
  * @api private
  */
 
-exports.rethrow = function rethrow(err, filename, lineno){
-  if (!filename) throw err;
-
+exports.rethrow = function rethrow(err, filename, lineno, str){
+  if (!(err instanceof Error)) throw err;
+  if ((typeof window != 'undefined' || !filename) && !str) {
+    err.message += ' on line ' + lineno;
+    throw err;
+  }
+  try {
+    str =  str || require('fs').readFileSync(filename, 'utf8')
+  } catch (ex) {
+    rethrow(err, null, lineno)
+  }
   var context = 3
-    , str = require('fs').readFileSync(filename, 'utf8')
     , lines = str.split('\n')
     , start = Math.max(lineno - context, 0)
     , end = Math.min(lines.length, lineno + context);
@@ -3887,7 +4114,7 @@ exports.rethrow = function rethrow(err, filename, lineno){
   throw err;
 };
 
-  return exports;
+return exports;
 
 })({});
 
@@ -3909,20 +4136,20 @@ define({
         }
     },
     //>>excludeEnd('excludeJade')
-    version: '0.0.1',
+    version: '0.0.2',
     load: function (name, parentRequire, load, config) {
       //>>excludeStart('excludeJade', pragmas.excludeJade)
       fetchText(parentRequire.toUrl(name+'.jade'), function(text) {
         var f = Jade.compile(text);
-        
+
         if (config.isBuild) {
             buildMap[name] = Jade.compile(text, {compileDebug: false, client: true});
         }
-        
+
         load(f);
       });
       //>>excludeEnd('excludeJade')
-              
+
     }
 });
 //>>excludeStart('excludeJade', pragmas.excludeJade)
