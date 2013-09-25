@@ -4136,7 +4136,7 @@ define({
         }
     },
     //>>excludeEnd('excludeJade')
-    version: '0.0.2',
+    version: '0.0.3',
     load: function (name, parentRequire, load, config) {
       //>>excludeStart('excludeJade', pragmas.excludeJade)
       fetchText(parentRequire.toUrl(name+'.jade'), function(text) {
