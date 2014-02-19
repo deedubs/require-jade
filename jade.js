@@ -1,4 +1,5 @@
 //>>excludeStart('excludeJade', pragmas.excludeJade)
+var _jade_files = {};
 (function() {
 var getXhr, Jade,
     progIds = ['Msxml2.XMLHTTP', 'Microsoft.XMLHTTP', 'Msxml2.XMLHTTP.4.0'],
@@ -1276,6 +1277,9 @@ function stripBOM(str){
  */
 
 exports.compile = function(str, options){
+  if(options.filename) {
+    _jade_files[options.filename] = str;
+  }
   var options = options || {}
     , filename = options.filename
       ? JSON.stringify(options.filename)
@@ -3774,10 +3778,11 @@ exports.escape = function escape(html){
 
 exports.rethrow = function rethrow(err, filename, lineno){
   if (!filename) throw err;
-  if (typeof window != 'undefined') throw err;
+  // if (typeof window != 'undefined') throw err;
 
   var context = 3
-    , str = require('fs').readFileSync(filename, 'utf8')
+    // , str = require('fs').readFileSync(filename, 'utf8')
+    , str = _jade_files[filename]
     , lines = str.split('\n')
     , start = Math.max(lineno - context, 0)
     , end = Math.min(lines.length, lineno + context);
@@ -4140,7 +4145,7 @@ define({
     load: function (name, parentRequire, load, config) {
       //>>excludeStart('excludeJade', pragmas.excludeJade)
       fetchText(parentRequire.toUrl(name+'.jade'), function(text) {
-        var f = Jade.compile(text);
+        var f = Jade.compile(text, {compileDebug: true, filename: name + '.jade'});
 
         if (config.isBuild) {
             buildMap[name] = Jade.compile(text, {compileDebug: false, client: true});
