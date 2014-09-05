@@ -3739,6 +3739,10 @@ require.register("path.js", function(module, exports, require){
     if (path && trailingSlash) {
       path += '/';
     }
+	
+	// https://domain.com gets truncated to http:/domain.com
+	// Lets add a simple hack to fix that
+	path = path.replace(/^http(s?):\/([^\/])/, "http$1://$2")
     
     return (isAbsolute ? '/' : '') + path;
   };
